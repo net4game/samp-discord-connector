@@ -185,7 +185,9 @@ PLUGIN_EXPORT bool PLUGIN_CALL Load(void **ppData)
 		}
 
 		unsigned int init_block_ms = 0;
-		unsigned int init_timeout_ms = 120 * 1000;
+		// Default watchdog timeout. Keep this relatively low (old behavior) to surface issues quickly.
+		// Large guilds may require increasing this via discord_init_timeout_ms / DCC_INIT_TIMEOUT_MS.
+		unsigned int init_timeout_ms = 20 * 1000;
 		{
 			auto s = GetEnvironmentVar("DCC_INIT_BLOCK_MS");
 			if (s.empty())
@@ -195,7 +197,7 @@ PLUGIN_EXPORT bool PLUGIN_CALL Load(void **ppData)
 			s = GetEnvironmentVar("DCC_INIT_TIMEOUT_MS");
 			if (s.empty())
 				SampConfigReader::Get()->GetVar("discord_init_timeout_ms", s);
-			init_timeout_ms = ParseUIntOrDefault(s, 120 * 1000);
+			init_timeout_ms = ParseUIntOrDefault(s, 20 * 1000);
 		}
 
 		InitializeEverything(bot_token, intents);
@@ -525,7 +527,8 @@ class DiscordComponent : public IComponent, public PawnEventHandler, public Core
 			}
 
 			unsigned int init_block_ms = 0;
-			unsigned int init_timeout_ms = 120 * 1000;
+			// Default watchdog timeout. Large guilds may require increasing this via discord.init_timeout_ms / DCC_INIT_TIMEOUT_MS.
+			unsigned int init_timeout_ms = 20 * 1000;
 			{
 				std::string s = GetEnvironmentVar("DCC_INIT_BLOCK_MS");
 				if (s.empty())
@@ -543,7 +546,7 @@ class DiscordComponent : public IComponent, public PawnEventHandler, public Core
 					if (cfg)
 						s = std::to_string(*cfg);
 				}
-				init_timeout_ms = ParseUIntOrDefault(s, 120 * 1000);
+				init_timeout_ms = ParseUIntOrDefault(s, 20 * 1000);
 			}
 
 			InitializeEverything(bot_token.data(), intents);

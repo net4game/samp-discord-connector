@@ -43,7 +43,7 @@ By default the plugin initializes in the background (so it does not delay server
 
 If you want to control when the plugin considers initialization "timed out" and starts retrying in the background:
 - `discord_init_timeout_ms` / `discord.init_timeout_ms` / `DCC_INIT_TIMEOUT_MS`
-  Default is `120000` (120 seconds).
+  Default is `20000` (20 seconds). If your Discord server has large guild(s), increase this (e.g. `120000`).
 
 I am getting a intent error, how do I fix it?
 ---------------

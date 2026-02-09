@@ -52,7 +52,7 @@ discord_pawn_encoding windows-874
 # discord_init_block_ms 20000
 
 # (ไม่บังคับ) ตั้ง timeout การ init (ก่อนจะ retry ต่อแบบ background)
-# discord_init_timeout_ms 120000
+# discord_init_timeout_ms 20000
 ```
 
 **2) ตัวอย่างสคริปต์ Pawn (`.pwn`)**
@@ -110,7 +110,7 @@ Startup / รอการ Initialize
 
 หากต้องการกำหนดเวลาว่าเมื่อไหร่ถึงจะถือว่า init "timeout" และเริ่ม retry ต่อแบบ background:
 - `discord_init_timeout_ms` / `discord.init_timeout_ms` / `DCC_INIT_TIMEOUT_MS`
-  ค่าเริ่มต้นคือ `120000` (120 วินาที)
+  ค่าเริ่มต้นคือ `20000` (20 วินาที) ถ้ากิลด์ใหญ่ให้เพิ่มค่านี้ (เช่น `120000`)
 
 ขึ้น intent error ต้องแก้ยังไง?
 ---------------
