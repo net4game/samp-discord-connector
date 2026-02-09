@@ -1,8 +1,10 @@
 # Discord connector plugin for San Andreas Multiplayer (SA:MP)
 
-| AppVeyor CI | Total downloads | Latest release |
+**Language:** English | [ภาษาไทย](README.th.md)
+
+| CI | Total downloads | Latest release |
 | :---: | :---: | :---: |
-|  ![Build status](https://github.com/maddinat0r/samp-discord-connector/workflows/Build/badge.svg)|  [![All Releases](https://img.shields.io/github/downloads/maddinat0r/samp-discord-connector/total.svg?maxAge=86400)](https://github.com/maddinat0r/samp-discord-connector/releases)  |  [![latest release](https://img.shields.io/github/release/maddinat0r/samp-discord-connector.svg?maxAge=86400)](https://github.com/maddinat0r/samp-discord-connector/releases) <br> [![Github Releases](https://img.shields.io/github/downloads/maddinat0r/samp-discord-connector/latest/total.svg?maxAge=86400)](https://github.com/maddinat0r/samp-discord-connector/releases)  |  
+|  [![Build status](https://github.com/GimmickPlus/samp-discord-connector/actions/workflows/build.yml/badge.svg)](https://github.com/GimmickPlus/samp-discord-connector/actions/workflows/build.yml) |  [![All Releases](https://img.shields.io/github/downloads/GimmickPlus/samp-discord-connector/total.svg?maxAge=86400)](https://github.com/GimmickPlus/samp-discord-connector/releases)  |  [![latest release](https://img.shields.io/github/release/GimmickPlus/samp-discord-connector.svg?maxAge=86400)](https://github.com/GimmickPlus/samp-discord-connector/releases) <br> [![Github Releases](https://img.shields.io/github/downloads/GimmickPlus/samp-discord-connector/latest/total.svg?maxAge=86400)](https://github.com/GimmickPlus/samp-discord-connector/releases)  |  
 -------------------------------------------------
 **This plugin allows you to control a Discord bot from within your PAWN script.**
 
