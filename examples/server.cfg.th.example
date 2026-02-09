@@ -1,0 +1,13 @@
+plugins discord-connector
+
+discord_bot_token ใส่โทเคนของคุณตรงนี้
+
+# ถ้าสคริปต์ .pwn ของคุณเป็น Windows-874 (ไทย) ให้เปิดตัวนี้
+discord_pawn_encoding windows-874
+
+# (ไม่บังคับ) ถ้าอยากให้เซิร์ฟเวอร์รอ init Discord ตอนสตาร์ท:
+# discord_init_block_ms 20000
+
+# (ไม่บังคับ) ตั้ง timeout การ init (ก่อนจะ retry ต่อแบบ background)
+# discord_init_timeout_ms 120000
+

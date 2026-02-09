@@ -35,6 +35,72 @@ Pawn Encoding / ภาษาไทย (Windows-874)
 - open.mp (`config.json`): `"discord": { "pawn_encoding": "windows-874" }`
 - Environment variable: `DCC_PAWN_ENCODING=windows-874`
 
+ตัวอย่างสำหรับคนไทย (server.cfg + pwn)
+--------------------------------
+ตัวอย่างไฟล์อยู่ในโฟลเดอร์ `examples/` ด้วย (แนะนำให้อ่านพร้อมกัน)
+
+**1) ตัวอย่าง `server.cfg` (SA:MP / Windows-874)**
+```ini
+plugins discord-connector
+
+discord_bot_token ใส่โทเคนของคุณตรงนี้
+
+# ถ้าสคริปต์ .pwn ของคุณเป็น Windows-874 (ไทย) ให้เปิดตัวนี้
+discord_pawn_encoding windows-874
+
+# (ไม่บังคับ) ถ้าอยากให้เซิร์ฟเวอร์รอ init Discord ตอนสตาร์ท:
+# discord_init_block_ms 20000
+
+# (ไม่บังคับ) ตั้ง timeout การ init (ก่อนจะ retry ต่อแบบ background)
+# discord_init_timeout_ms 120000
+```
+
+**2) ตัวอย่างสคริปต์ Pawn (`.pwn`)**
+- ให้แน่ใจว่ามีไฟล์ `discord-connector.inc` อยู่ใน `pawno/include` (มักจะมากับไฟล์ release)
+- ถ้าคุณเซฟสคริปต์ `.pwn` เป็น Windows-874 (ไทย) ให้เปิด `discord_pawn_encoding windows-874` ใน `server.cfg` ตามตัวอย่างด้านบน
+```pawn
+#include <a_samp>
+#include <discord-connector>
+
+// เปลี่ยนเป็นชื่อห้องของคุณ (แนะนำให้เป็นตัวอักษรอังกฤษเพื่อหลีกเลี่ยงปัญหาการหา channel)
+#define DISCORD_CHANNEL_NAME "server-log"
+
+new DCC_Channel:g_LogChannel = DCC_INVALID_CHANNEL;
+
+public OnGameModeInit()
+{
+    print("[DCC] Thai example loaded");
+    return 1;
+}
+
+// จะถูกเรียกเมื่อ plugin เริ่ม cache ข้อมูล guild แล้ว
+public DCC_OnGuildCreate(DCC_Guild:guild)
+{
+    g_LogChannel = DCC_FindChannelByName(DISCORD_CHANNEL_NAME);
+    if (g_LogChannel != DCC_INVALID_CHANNEL)
+    {
+        DCC_SendChannelMessage(g_LogChannel, "สวัสดีครับ เซิร์ฟเวอร์ออนไลน์แล้ว");
+    }
+    return 1;
+}
+
+// ตัวอย่างรับข้อความจาก Discord
+public DCC_OnMessageCreate(DCC_Message:message)
+{
+    new content[256];
+    new DCC_Channel:channel;
+
+    DCC_GetMessageContent(message, content, sizeof content);
+    DCC_GetMessageChannel(message, channel);
+
+    if (!strcmp(content, "!ping", true))
+    {
+        DCC_SendChannelMessage(channel, "pong (ตอบกลับภาษาไทยได้)");
+    }
+    return 1;
+}
+```
+
 Startup / รอการ Initialize
 -----------------------------
 ค่าเริ่มต้นปลั๊กอินจะ initialize แบบ background (เพื่อไม่ให้ทำให้การเปิดเซิร์ฟช้าลง) หากต้องการให้บล็อกการเริ่มเซิร์ฟเวอร์จนกว่าจะ init ข้อมูล Discord เสร็จ:
