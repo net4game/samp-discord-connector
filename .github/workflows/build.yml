@@ -4,26 +4,26 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - "v*.*.*"
+      - 'v*.*.*'
     branches:
-      - "master"
+      - 'master' 
     paths:
-      - "**.hpp"
-      - "**.cpp"
-      - "**.h"
-      - "**.c"
-      - "**CMakeLists.txt"
-      - ".github/workflows/build.yml"
+      - '**.hpp'
+      - '**.cpp'
+      - '**.h'
+      - '**.c'
+      - '**CMakeLists.txt'
+      - '.github/workflows/build.yml'
   pull_request:
     branches:
-      - "master"
+      - 'master'
     paths:
-      - "**.hpp"
-      - "**.cpp"
-      - "**.h"
-      - "**.c"
-      - "**CMakeLists.txt"
-      - ".github/workflows/build.yml"
+      - '**.hpp'
+      - '**.cpp'
+      - '**.h'
+      - '**.c'
+      - '**CMakeLists.txt'
+      - '.github/workflows/build.yml'
 
 jobs:
   build:
@@ -35,205 +35,88 @@ jobs:
         build-type: [Debug, Release]
         include:
           #- os: windows-latest
-          #  cmake-args: "-AWin32 -T v143,host=x86 -DGH_ACBUILD=TRUE -DUSING_BOOST_NO_CONAN=TRUE -DUSING_OPENSSL_NO_CONAN=TRUE -DBoost_NO_BOOST_CMAKE=ON -DCONAN_DISABLE_CHECK_COMPILER=ON"
+          #  cmake-args: '-AWin32 -Thost=x86 -DGH_ACBUILD=TRUE  -DUSING_BOOST_NO_CONAN=TRUE -DUSING_OPENSSL_NO_CONAN=TRUE -DBoost_NO_BOOST_CMAKE=ON'
           - os: ubuntu-24.04
-            cmake-args: "-DCMAKE_CXX_FLAGS=-m32 -DCMAKE_C_FLAGS=-m32 -DGH_ACBUILD=TRUE"
+            cmake-args: '-DCMAKE_CXX_FLAGS=-m32 -DCMAKE_C_FLAGS=-m32 -DGH_ACBUILD=TRUE'
 
     runs-on: ${{ matrix.os }}
     env:
       BUILD_TYPE: ${{ matrix.build-type }}
       CMAKE_BUILD_PARALLEL_LEVEL: 2
-      CONAN_CMAKE_GENERATOR: "Visual Studio 17 2022"
-      CONAN_CMAKE_GENERATOR_PLATFORM: "Win32"
-      CONAN_CMAKE_GENERATOR_TOOLSET: "v143"
-      CONAN_VCVARS_VER: "14.4"
-      VCVARS_VER: "14.4"
-      VSCMD_ARG_VCVARS_VER: "14.4"
-      CONAN_REQUEST_TIMEOUT: "600"
-      CONAN_RETRIES: "5"
-      CONAN_RETRY_WAIT: "10"
-      CONAN_USER_HOME: ${{ github.workspace }}\.conan
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
 
-      - name: Set env
-        run: echo "REPO_TAG=$(git describe --tags --always)" >> $GITHUB_ENV
-        shell: bash
+    - name: Set env
+      run: echo "REPO_TAG=$(git describe --tags --always)" >> $GITHUB_ENV
+      shell: bash
+    
+    - name: get-cmake
+      uses: lukka/get-cmake@latest
 
-      - name: get-cmake
-        uses: lukka/get-cmake@latest
+    - if: runner.os == 'Windows'
+      name: Install boost with vcpkg
+      run: |
+          git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+          C:\vcpkg\bootstrap-vcpkg.bat
+          C:\vcpkg\vcpkg.exe install boost-system:x86-windows boost-filesystem:x86-windows boost-thread:x86-windows
 
-      - if: runner.os == 'Windows'
-        name: Cache Conan
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ github.workspace }}\.conan
-          key: windows-conan-${{ hashFiles('**/conanfile.*', '**/conan.lock', 'CMakeLists.txt', 'src/CMakeLists.txt', 'libs/cmake-conan/conan.cmake') }}
-          restore-keys: |
-            windows-conan-
+    - if: runner.os == 'Windows'
+      name: Set boost env
+      run: echo "BOOST_ROOT=C:\\vcpkg\\installed\\x86-windows" >> $GITHUB_ENV
+      shell: bash
 
-      - if: runner.os == 'Windows'
-        name: Remove Conan download cache
-        shell: pwsh
-        run: |
-          $conanHome = "${env:GITHUB_WORKSPACE}\.conan"
-          $dataDir = Join-Path $conanHome "data"
-          if (Test-Path $dataDir) {
-            Write-Host "Purging all _dl folders under $dataDir (prevents corrupted partial downloads)"
-            cmd /c "for /d /r ""$dataDir"" %D in (_dl) do @echo Deleting %D & rmdir /s /q ""%D"""
-          }
+    - if: runner.os == 'Windows'
+      name: Install openssl
+      run: choco install openssl --forcex86 | out-null
+      
+    - if: runner.os == 'Windows'
+      name: Setup openssl envvar
+      run: echo "OPENSSL_ROOT=C:\\Program Files (x86)\\OpenSSL-Win32" >> $GITHUB_ENV
+      
+    - if: runner.os == 'Linux'
+      name: Install gcc/g++-multilib
+      run: |
+        sudo dpkg --add-architecture i386
+        sudo apt-get update
+        sudo apt install gcc-multilib g++-multilib libstdc++6:i386 libc6-dev:i386
 
-      - if: runner.os == 'Windows'
-        name: Cache Boost 1.73.0
-        uses: actions/cache@v4
-        with:
-          path: C:\local\boost_1_73_0
-          key: boost-1.73.0-msvc142-x86
+    - name: Get python
+      uses: actions/setup-python@v5
+      with:
+        python-version: 3.11
 
-      - if: runner.os == 'Windows'
-        name: Install Boost 1.73.0
-        run: |
-          $boostRoot = "C:\local\boost_1_73_0"
-          if (Test-Path $boostRoot) {
-            Write-Host "Boost already cached at $boostRoot"
-            exit 0
-          }
-          $url = "https://archives.boost.io/release/1.73.0/binaries/boost_1_73_0-msvc-14.2-32.exe"
-          $sha256 = "69e57999cad1bf773d652f330b1383d37d7e02f888fb80ae34dc2447b6b2f037"
-          $exe = Join-Path $env:TEMP "boost_1_73_0-msvc-14.2-32.exe"
-          Invoke-WebRequest -Uri $url -OutFile $exe
-          $actual = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
-          if ($actual -ne $sha256) {
-            Write-Error "Boost SHA256 mismatch. Expected $sha256, got $actual"
-            exit 1
-          }
-          Start-Process -Wait -FilePath $exe -ArgumentList "/SILENT","/SP-","/SUPPRESSMSGBOXES","/DIR=$boostRoot"
-        shell: pwsh
+    - name: Install conan
+      run: |
+        python -m pip install --upgrade pip
+        pip install conan
+        conan profile detect --force
 
-      - if: runner.os == 'Windows'
-        name: Set boost env
-        run: |
-          echo "BOOST_ROOT=C:\\local\\boost_1_73_0" >> $GITHUB_ENV
-          echo "BOOST_LIBRARYDIR=C:\\local\\boost_1_73_0\\lib32-msvc-14.2" >> $GITHUB_ENV
-        shell: bash
+    - name: Install dependencies with Conan
+      run: |
+        mkdir build && cd build
+        conan install .. --build=missing -s arch=x86 -s build_type=${{ matrix.build-type }}
+    
+    - name: Generate build files
+      run: cd build && cmake .. ${{ matrix.cmake-args }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DDCC_VERSION="${{ env.REPO_TAG }}" -DBOOST_ROOT=${{ env.BOOST_ROOT }} -DOPENSSL_ROOT=${{ env.OPENSSL_ROOT }} -DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake
 
-      - if: runner.os == 'Windows'
-        name: Cache OpenSSL 1.1.1w
-        uses: actions/cache@v4
-        with:
-          path: C:\local\openssl-1.1.1w
-          key: openssl-1.1.1w-win32
+    - if: runner.os == 'Windows'
+      name: Build Windows
+      run: cd build && cmake --build . --config ${{ matrix.build-type }}
 
-      - if: runner.os == 'Windows'
-        name: Install OpenSSL 1.1.1w (Win32)
-        run: |
-          $opensslRoot = "C:\local\openssl-1.1.1w"
-          if (Test-Path $opensslRoot) {
-            Write-Host "OpenSSL already cached at $opensslRoot"
-            exit 0
-          }
-          $url = "https://slproweb.com/download/Win32OpenSSL-1_1_1w.exe"
-          $sha256 = "7d2098dce53032009790b596e396bb53c1894a1b4339a67befebf1848cb2ff33"
-          $exe = Join-Path $env:TEMP "Win32OpenSSL-1_1_1w.exe"
-          Invoke-WebRequest -Uri $url -OutFile $exe
-          $actual = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
-          if ($actual -ne $sha256) {
-            Write-Error "OpenSSL SHA256 mismatch. Expected $sha256, got $actual"
-            exit 1
-          }
-          Start-Process -Wait -FilePath $exe -ArgumentList "/silent","/verysilent","/sp-","/suppressmsgboxes","/dir=$opensslRoot"
-        shell: pwsh
+    - if: runner.os == 'Linux'
+      name: Build Linux
+      run: cd build && cmake --build .
+      
 
-      - if: runner.os == 'Windows'
-        name: Setup openssl envvar
-        shell: pwsh
-        run: |
-          Add-Content -Path $env:GITHUB_ENV -Value "OPENSSL_ROOT=C:\local\openssl-1.1.1w"
-          Add-Content -Path $env:GITHUB_ENV -Value "OPENSSL_ROOT_DIR=C:\local\openssl-1.1.1w"
-
-      - if: runner.os == 'Windows'
-        name: Get python
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.9.0
-
-      - if: runner.os == 'Windows'
-        name: Install conan
-        run: |
-          python -m pip install --upgrade pip
-          pip install "conan<2"
-
-      - if: runner.os == 'Windows'
-        name: Configure Conan profile
-        run: |
-          conan profile new default --detect --force
-          conan profile update settings.compiler.version=17 default
-
-      - if: runner.os == 'Windows'
-        name: Ensure MSVC v14.3 alias
-        shell: pwsh
-        run: |
-          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-          if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found at $vswhere" }
-          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          if (-not $vsPath) { $vsPath = & $vswhere -latest -products * -property installationPath }
-          if (-not $vsPath) { throw "Unable to locate Visual Studio installation via vswhere" }
-          $toolsRoot = Join-Path $vsPath "VC\Tools\MSVC"
-          $target = Get-ChildItem $toolsRoot | Sort-Object Name -Descending | Select-Object -First 1
-          if (-not $target) { throw "Could not locate MSVC toolset under $toolsRoot" }
-          $alias = Join-Path $toolsRoot "14.3"
-          if (-not (Test-Path $alias)) { New-Item -ItemType Junction -Path $alias -Target $target.FullName | Out-Null }
-
-      - if: runner.os == 'Windows'
-        name: Generate build files (Windows)
-        shell: pwsh
-        run: |
-          mkdir build
-          cd build
-          cmake .. ${{ matrix.cmake-args }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DDCC_VERSION="${{ env.REPO_TAG }}" -DBOOST_ROOT="$env:BOOST_ROOT" -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR"
-
-      - if: runner.os == 'Linux'
-        name: Setup Earthly
-        uses: earthly/actions-setup@v1
-        with:
-          version: "0.8.15"
-
-      - if: runner.os == 'Linux'
-        name: Build Linux with Earthly
-        shell: bash
-        run: |
-          earthly --ci --output +build --BUILD_TYPE=${{ matrix.build-type }} --DCC_VERSION=${{ env.REPO_TAG }} --GH_ACBUILD=TRUE
-
-      - if: runner.os == 'Windows'
-        name: Build Windows
-        run: cd build && cmake --build . --config ${{ matrix.build-type }}
-
-      - if: runner.os == 'Windows'
-        name: Zip artifact (Windows)
-        run: Compress-Archive ${{ runner.workspace }}/samp-discord-connector/build/artifact/* ${{ runner.workspace }}/samp-discord-connector/build/artifact/discord-connector-${{ env.REPO_TAG }}-${{ runner.os }}-${{ matrix.build-type }}.zip
-        shell: pwsh
-
-      - if: runner.os == 'Linux'
-        name: Zip artifact (Linux)
-        shell: bash
-        run: |
-          cd build/artifact
-          zip -r "discord-connector-${{ env.REPO_TAG }}-${{ runner.os }}-${{ matrix.build-type }}.zip" .
-
-      - if: runner.os == 'Windows'
-        name: Upload artifact (Windows)
-        uses: actions/upload-artifact@v4
-        with:
-          name: discord-connector-${{ env.REPO_TAG }}-${{ runner.os }}-${{ matrix.build-type }}
-          path: ${{ runner.workspace }}/samp-discord-connector/build/artifact/discord-connector-${{ env.REPO_TAG }}-${{ runner.os }}-${{ matrix.build-type }}.zip
-
-      - if: runner.os == 'Linux'
-        name: Upload artifact (Linux)
-        uses: actions/upload-artifact@v4
-        with:
-          name: discord-connector-${{ env.REPO_TAG }}-${{ runner.os }}-${{ matrix.build-type }}
-          path: ${{ runner.workspace }}/samp-discord-connector/build/artifact/discord-connector-${{ env.REPO_TAG }}-${{ runner.os }}-${{ matrix.build-type }}.zip
+    - name: Zip artifact
+      run: Compress-Archive ${{ runner.workspace }}/samp-discord-connector/build/artifact/* ${{ runner.workspace }}/samp-discord-connector/build/artifact/discord-connector-${{ env.REPO_TAG }}-${{ runner.os }}-${{ matrix.build-type }}.zip
+      shell: pwsh
+      
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: discord-connector-${{ env.REPO_TAG }}-${{ runner.os }}-${{ matrix.build-type }}
+        path: ${{ runner.workspace }}/samp-discord-connector/build/artifact/discord-connector-${{ env.REPO_TAG }}-${{ runner.os }}-${{ matrix.build-type }}.zip
