@@ -14,41 +14,25 @@
 #include "Emoji.hpp"
 #include "Command.hpp"
 #include "CommandInteraction.hpp"
-#include "Encoding.hpp"
 #include <fmt/printf.h>
-#include <unordered_set>
+#include <unordered_map>
 
 #ifdef ERROR
 #undef ERROR
 #endif
 
-static inline std::string GetPawnStr(AMX *amx, cell param)
+namespace
 {
-	return utils::FromPawnEncoding(::amx_GetCppString(amx, param));
-}
+	std::unordered_map<cell, CommandOption_t> g_PendingCommandOptions;
+	std::unordered_map<cell, CommandOption*> g_PendingCommandOptionIndex;
+	cell g_NextCommandOptionId = 1;
 
-static inline size_t Utf8CharCount(std::string const &s)
-{
-	// Discord limits are in characters; use a lenient UTF-8 codepoint count.
-	size_t i = 0;
-	size_t count = 0;
-	while (i < s.size())
+	void ClearPendingCommandOptions()
 	{
-		const unsigned char c = static_cast<unsigned char>(s[i]);
-		if (c < 0x80u)
-			i += 1;
-		else if ((c & 0xE0u) == 0xC0u && i + 1 < s.size())
-			i += 2;
-		else if ((c & 0xF0u) == 0xE0u && i + 2 < s.size())
-			i += 3;
-		else if ((c & 0xF8u) == 0xF0u && i + 3 < s.size())
-			i += 4;
-		else
-			i += 1; // invalid byte
-
-		++count;
+		g_PendingCommandOptions.clear();
+		g_PendingCommandOptionIndex.clear();
+		g_NextCommandOptionId = 1;
 	}
-	return count;
 }
 /*
 // native native_name(...);
@@ -69,7 +53,7 @@ AMX_DECLARE_NATIVE(Native::DCC_FindChannelByName)
 {
 	ScopedDebugInfo dbg_info(amx, "DCC_FindChannelByName", params, "s");
 
-	std::string const channel_name = GetPawnStr(amx, params[1]);
+	std::string const channel_name = amx_GetCppString(amx, params[1]);
 	Channel_t const &channel = ChannelManager::Get()->FindChannelByName(channel_name);
 
 	cell ret_val = channel ? channel->GetPawnId() : 0;
@@ -83,7 +67,7 @@ AMX_DECLARE_NATIVE(Native::DCC_FindChannelById)
 {
 	ScopedDebugInfo dbg_info(amx, "DCC_FindChannelById", params, "s");
 
-	Snowflake_t const channel_id = GetPawnStr(amx, params[1]);
+	Snowflake_t const channel_id = amx_GetCppString(amx, params[1]);
 	Channel_t const &channel = ChannelManager::Get()->FindChannelById(channel_id);
 
 	cell ret_val = channel ? channel->GetPawnId() : 0;
@@ -105,7 +89,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetChannelId)
 		return 0;
 	}
 
-	cell ret_val = amx_SetCppString(amx, params[2], utils::ToPawnEncoding(channel->GetId()), params[3]) == AMX_ERR_NONE;
+	cell ret_val = amx_SetCppString(amx, params[2], channel->GetId(), params[3]) == AMX_ERR_NONE;
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", ret_val);
 	return ret_val;
@@ -176,7 +160,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetChannelName)
 		return 0;
 	}
 
-	cell ret_val = amx_SetCppString(amx, params[2], utils::ToPawnEncoding(channel->GetName()), params[3]) == AMX_ERR_NONE;
+	cell ret_val = amx_SetCppString(amx, params[2], channel->GetName(), params[3]) == AMX_ERR_NONE;
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", ret_val);
 	return ret_val;
@@ -195,7 +179,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetChannelTopic)
 		return 0;
 	}
 
-	cell ret_val = amx_SetCppString(amx, params[2], utils::ToPawnEncoding(channel->GetTopic()), params[3]) == AMX_ERR_NONE;
+	cell ret_val = amx_SetCppString(amx, params[2], channel->GetTopic(), params[3]) == AMX_ERR_NONE;
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", ret_val);
 	return ret_val;
@@ -286,7 +270,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetChannelParentCategory)
 	return 1;
 }
 
-// native DCC_SendChannelMessage(DCC_Channel:channel, const message[], 
+// native DCC_SendChannelMessage(DCC_Channel:channel, const message[],
 //     const callback[] = "", const format[] = "", {Float, _}:...);
 AMX_DECLARE_NATIVE(Native::DCC_SendChannelMessage)
 {
@@ -300,8 +284,8 @@ AMX_DECLARE_NATIVE(Native::DCC_SendChannelMessage)
 		return 0;
 	}
 
-	auto message = GetPawnStr(amx, params[2]);
-	if (Utf8CharCount(message) > 2000)
+	auto message = amx_GetCppString(amx, params[2]);
+	if (message.length() > 2000)
 	{
 		Logger::Get()->LogNative(samplog_LogLevel::ERROR,
 			"message must be shorter than 2000 characters");
@@ -309,8 +293,8 @@ AMX_DECLARE_NATIVE(Native::DCC_SendChannelMessage)
 	}
 
 	auto
-		cb_name = GetPawnStr(amx, params[3]),
-		cb_format = GetPawnStr(amx, params[4]);
+		cb_name = amx_GetCppString(amx, params[3]),
+		cb_format = amx_GetCppString(amx, params[4]);
 
 	pawn_cb::Error cb_error;
 	auto cb = pawn_cb::Callback::Prepare(
@@ -341,9 +325,8 @@ AMX_DECLARE_NATIVE(Native::DCC_SetChannelName)
 		return 0;
 	}
 
-	auto name = GetPawnStr(amx, params[2]);
-	auto name_len = Utf8CharCount(name);
-	if (name_len < 2 || name_len > 100)
+	auto name = amx_GetCppString(amx, params[2]);
+	if (name.length() < 2 || name.length() > 100)
 	{
 		Logger::Get()->LogNative(samplog_LogLevel::ERROR,
 			"name must be between 2 and 100 characters in length");
@@ -376,8 +359,8 @@ AMX_DECLARE_NATIVE(Native::DCC_SetChannelTopic)
 		return 0;
 	}
 
-	auto topic = GetPawnStr(amx, params[2]);
-	if (Utf8CharCount(topic) > 1024)
+	auto topic = amx_GetCppString(amx, params[2]);
+	if (topic.length() > 1024)
 	{
 		Logger::Get()->LogNative(samplog_LogLevel::ERROR,
 			"topic must be between 0 and 1024 characters in length");
@@ -495,7 +478,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetMessageId)
 		return 0;
 	}
 
-	cell ret_val = amx_SetCppString(amx, params[2], utils::ToPawnEncoding(msg->GetId()), params[3]) == AMX_ERR_NONE;
+	cell ret_val = amx_SetCppString(amx, params[2], msg->GetId(), params[3]) == AMX_ERR_NONE;
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", ret_val);
 	return ret_val;
@@ -567,7 +550,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetMessageContent)
 	}
 
 	cell ret_val = amx_SetCppString(
-		amx, params[2], utils::ToPawnEncoding(msg->GetContent()), params[3]) == AMX_ERR_NONE;
+		amx, params[2], msg->GetContent(), params[3]) == AMX_ERR_NONE;
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", ret_val);
 	return ret_val;
@@ -784,8 +767,8 @@ AMX_DECLARE_NATIVE(Native::DCC_FindUserByName)
 	ScopedDebugInfo dbg_info(amx, "DCC_FindUserByName", params, "ss");
 
 	std::string const
-		user_name = GetPawnStr(amx, params[1]),
-		discriminator = GetPawnStr(amx, params[2]);
+		user_name = amx_GetCppString(amx, params[1]),
+		discriminator = amx_GetCppString(amx, params[2]);
 	User_t const &user = UserManager::Get()->FindUserByName(user_name, discriminator);
 
 	cell ret_val = user ? user->GetPawnId() : 0;
@@ -799,7 +782,7 @@ AMX_DECLARE_NATIVE(Native::DCC_FindUserById)
 {
 	ScopedDebugInfo dbg_info(amx, "DCC_FindUserById", params, "s");
 
-	Snowflake_t const user_id = GetPawnStr(amx, params[1]);
+	Snowflake_t const user_id = amx_GetCppString(amx, params[1]);
 	User_t const &user = UserManager::Get()->FindUserById(user_id);
 
 	cell ret_val = user ? user->GetPawnId() : 0;
@@ -821,7 +804,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetUserId)
 		return 0;
 	}
 
-	cell ret_val = amx_SetCppString(amx, params[2], utils::ToPawnEncoding(user->GetId()), params[3]) == AMX_ERR_NONE;
+	cell ret_val = amx_SetCppString(amx, params[2], user->GetId(), params[3]) == AMX_ERR_NONE;
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", ret_val);
 	return ret_val;
@@ -840,7 +823,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetUserName)
 		return 0;
 	}
 
-	cell ret_val = amx_SetCppString(amx, params[2], utils::ToPawnEncoding(user->GetUsername()), params[3]) == AMX_ERR_NONE;
+	cell ret_val = amx_SetCppString(amx, params[2], user->GetUsername(), params[3]) == AMX_ERR_NONE;
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", ret_val);
 	return ret_val;
@@ -859,7 +842,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetUserDiscriminator)
 		return 0;
 	}
 
-	cell ret_val = amx_SetCppString(amx, params[2], utils::ToPawnEncoding(user->GetDiscriminator()), params[3]) == AMX_ERR_NONE;
+	cell ret_val = amx_SetCppString(amx, params[2], user->GetDiscriminator(), params[3]) == AMX_ERR_NONE;
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", ret_val);
 	return ret_val;
@@ -923,7 +906,7 @@ AMX_DECLARE_NATIVE(Native::DCC_FindRoleByName)
 	ScopedDebugInfo dbg_info(amx, "DCC_FindRoleByName", params, "ds");
 
 	GuildId_t guildid = params[1];
-	std::string const role_name = GetPawnStr(amx, params[2]);
+	std::string const role_name = amx_GetCppString(amx, params[2]);
 
 	Guild_t const &guild = GuildManager::Get()->FindGuild(guildid);
 	if (!guild)
@@ -955,7 +938,7 @@ AMX_DECLARE_NATIVE(Native::DCC_FindRoleById)
 {
 	ScopedDebugInfo dbg_info(amx, "DCC_FindRoleById", params, "s");
 
-	Snowflake_t const role_id = GetPawnStr(amx, params[1]);
+	Snowflake_t const role_id = amx_GetCppString(amx, params[1]);
 	Role_t const &role = RoleManager::Get()->FindRoleById(role_id);
 
 	cell ret_val = role ? role->GetPawnId() : 0;
@@ -977,7 +960,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetRoleId)
 		return 0;
 	}
 
-	cell ret_val = amx_SetCppString(amx, params[2], utils::ToPawnEncoding(role->GetId()), params[3]) == AMX_ERR_NONE;
+	cell ret_val = amx_SetCppString(amx, params[2], role->GetId(), params[3]) == AMX_ERR_NONE;
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", ret_val);
 	return ret_val;
@@ -996,7 +979,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetRoleName)
 		return 0;
 	}
 
-	cell ret_val = amx_SetCppString(amx, params[2], utils::ToPawnEncoding(role->GetName()), params[3]) == AMX_ERR_NONE;
+	cell ret_val = amx_SetCppString(amx, params[2], role->GetName(), params[3]) == AMX_ERR_NONE;
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", ret_val);
 	return ret_val;
@@ -1146,7 +1129,7 @@ AMX_DECLARE_NATIVE(Native::DCC_FindGuildByName)
 {
 	ScopedDebugInfo dbg_info(amx, "DCC_FindGuildByName", params, "s");
 
-	std::string const guild_name = GetPawnStr(amx, params[1]);
+	std::string const guild_name = amx_GetCppString(amx, params[1]);
 	Guild_t const &guild = GuildManager::Get()->FindGuildByName(guild_name);
 
 	cell ret_val = guild ? guild->GetPawnId() : 0;
@@ -1160,7 +1143,7 @@ AMX_DECLARE_NATIVE(Native::DCC_FindGuildById)
 {
 	ScopedDebugInfo dbg_info(amx, "DCC_FindGuildById", params, "s");
 
-	Snowflake_t const guild_id = GetPawnStr(amx, params[1]);
+	Snowflake_t const guild_id = amx_GetCppString(amx, params[1]);
 	Guild_t const &guild = GuildManager::Get()->FindGuildById(guild_id);
 
 	cell ret_val = guild ? guild->GetPawnId() : 0;
@@ -1182,7 +1165,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetGuildId)
 		return 0;
 	}
 
-	cell ret_val = amx_SetCppString(amx, params[2], utils::ToPawnEncoding(guild->GetId()), params[3]) == AMX_ERR_NONE;
+	cell ret_val = amx_SetCppString(amx, params[2], guild->GetId(), params[3]) == AMX_ERR_NONE;
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", ret_val);
 	return ret_val;
@@ -1201,7 +1184,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetGuildName)
 		return 0;
 	}
 
-	cell ret_val = amx_SetCppString(amx, params[2], utils::ToPawnEncoding(guild->GetName()), params[3]) == AMX_ERR_NONE;
+	cell ret_val = amx_SetCppString(amx, params[2], guild->GetName(), params[3]) == AMX_ERR_NONE;
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", ret_val);
 	return ret_val;
@@ -1220,7 +1203,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetGuildOwnerId)
 		return 0;
 	}
 
-	cell ret_val = amx_SetCppString(amx, params[2], utils::ToPawnEncoding(guild->GetOwnerId()), params[3]) == AMX_ERR_NONE;
+	cell ret_val = amx_SetCppString(amx, params[2], guild->GetOwnerId(), params[3]) == AMX_ERR_NONE;
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", ret_val);
 	return ret_val;
@@ -1418,7 +1401,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetGuildMemberNickname)
 		return 0;
 	}
 
-	cell ret_val = amx_SetCppString(amx, params[3], utils::ToPawnEncoding(nick), params[4]) == AMX_ERR_NONE;
+	cell ret_val = amx_SetCppString(amx, params[3], nick, params[4]) == AMX_ERR_NONE;
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", ret_val);
 	return ret_val;
@@ -1724,9 +1707,8 @@ AMX_DECLARE_NATIVE(Native::DCC_SetGuildName)
 		return 0;
 	}
 
-	auto name = GetPawnStr(amx, params[2]);
-	auto name_len = Utf8CharCount(name);
-	if (name_len < 2 || name_len > 100)
+	auto name = amx_GetCppString(amx, params[2]);
+	if (name.length() < 2 || name.length() > 100)
 	{
 		Logger::Get()->LogNative(samplog_LogLevel::ERROR,
 			"name must be between 2 and 100 characters in length");
@@ -1753,9 +1735,8 @@ AMX_DECLARE_NATIVE(Native::DCC_CreateGuildChannel)
 		return 0;
 	}
 
-	auto name = GetPawnStr(amx, params[2]);
-	auto name_len = Utf8CharCount(name);
-	if (name_len < 2 || name_len > 100)
+	auto name = amx_GetCppString(amx, params[2]);
+	if (name.length() < 2 || name.length() > 100)
 	{
 		Logger::Get()->LogNative(samplog_LogLevel::ERROR,
 			"name must be between 2 and 100 characters in length");
@@ -1772,8 +1753,8 @@ AMX_DECLARE_NATIVE(Native::DCC_CreateGuildChannel)
 	}
 
 	auto
-		cb_name = GetPawnStr(amx, params[4]),
-		cb_format = GetPawnStr(amx, params[5]);
+		cb_name = amx_GetCppString(amx, params[4]),
+		cb_format = amx_GetCppString(amx, params[5]);
 
 	pawn_cb::Error cb_error;
 	auto cb = pawn_cb::Callback::Prepare(
@@ -1818,7 +1799,7 @@ AMX_DECLARE_NATIVE(Native::DCC_SetGuildMemberNickname)
 		return 0;
 	}
 
-	guild->SetMemberNickname(user, GetPawnStr(amx, params[3]));
+	guild->SetMemberNickname(user, amx_GetCppString(amx, params[3]));
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '1'");
 	return 1;
@@ -1976,7 +1957,7 @@ AMX_DECLARE_NATIVE(Native::DCC_CreateGuildMemberBan)
 		return 0;
 	}
 
-	guild->CreateMemberBan(user, GetPawnStr(amx, params[3]));
+	guild->CreateMemberBan(user, amx_GetCppString(amx, params[3]));
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '1'");
 	return 1;
@@ -2057,7 +2038,7 @@ AMX_DECLARE_NATIVE(Native::DCC_SetGuildRoleName)
 		return 0;
 	}
 
-	guild->SetRoleName(role, GetPawnStr(amx, params[3]));
+	guild->SetRoleName(role, amx_GetCppString(amx, params[3]));
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '1'");
 	return 1;
@@ -2190,9 +2171,8 @@ AMX_DECLARE_NATIVE(Native::DCC_CreateGuildRole)
 		return 0;
 	}
 
-	auto name = GetPawnStr(amx, params[2]);
-	auto name_len = Utf8CharCount(name);
-	if (name_len < 2 || name_len > 100)
+	auto name = amx_GetCppString(amx, params[2]);
+	if (name.length() < 2 || name.length() > 100)
 	{
 		Logger::Get()->LogNative(samplog_LogLevel::ERROR,
 			"name must be between 2 and 100 characters in length");
@@ -2200,8 +2180,8 @@ AMX_DECLARE_NATIVE(Native::DCC_CreateGuildRole)
 	}
 
 	auto
-		cb_name = GetPawnStr(amx, params[3]),
-		cb_format = GetPawnStr(amx, params[4]);
+		cb_name = amx_GetCppString(amx, params[3]),
+		cb_format = amx_GetCppString(amx, params[4]);
 
 	pawn_cb::Error cb_error;
 	auto cb = pawn_cb::Callback::Prepare(
@@ -2289,12 +2269,11 @@ AMX_DECLARE_NATIVE(Native::DCC_SetBotNickname)
 		return 0;
 	}
 
-	auto nickname = GetPawnStr(amx, params[2]);
+	auto nickname = amx_GetCppString(amx, params[2]);
 	if (!nickname.empty()) // if nickname is empty it gets resetted/removed
 	{
 		// see https://discordapp.com/developers/docs/resources/user#usernames-and-nicknames
-		auto nickname_len = Utf8CharCount(nickname);
-		if (nickname_len < 2 || nickname_len > 32
+		if (nickname.length() < 2 || nickname.length() > 32
 			|| nickname == "discordtag" || nickname == "everyone" || nickname == "here"
 			|| nickname.front() == '@' || nickname.front() == '#' || nickname.front() == ':'
 			|| nickname.find("```") == 0)
@@ -2323,8 +2302,8 @@ AMX_DECLARE_NATIVE(Native::DCC_CreatePrivateChannel)
 	}
 
 	auto
-		cb_name = GetPawnStr(amx, params[2]),
-		cb_format = GetPawnStr(amx, params[3]);
+		cb_name = amx_GetCppString(amx, params[2]),
+		cb_format = amx_GetCppString(amx, params[3]);
 
 	pawn_cb::Error cb_error;
 	auto cb = pawn_cb::Callback::Prepare(
@@ -2365,7 +2344,7 @@ AMX_DECLARE_NATIVE(Native::DCC_SetBotActivity)
 {
 	ScopedDebugInfo dbg_info(amx, "DCC_SetBotActivity", params, "s");
 
-	ThisBot::Get()->SetActivity(GetPawnStr(amx, params[1]));
+	ThisBot::Get()->SetActivity(amx_GetCppString(amx, params[1]));
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '1'");
 	return 1;
@@ -2376,7 +2355,7 @@ AMX_DECLARE_NATIVE(Native::DCC_EscapeMarkdown)
 {
 	ScopedDebugInfo dbg_info(amx, "DCC_EscapeMarkdown", params, "drs");
 
-	auto const src = GetPawnStr(amx, params[1]);
+	auto const src = amx_GetCppString(amx, params[1]);
 	std::string dest;
 	dest.reserve(src.length());
 
@@ -2404,32 +2383,31 @@ AMX_DECLARE_NATIVE(Native::DCC_EscapeMarkdown)
 		dest.push_back(ch);
 	}
 
-	auto pawn_dest = utils::ToPawnEncoding(dest);
-	if (amx_SetCppString(amx, params[2], pawn_dest, params[3]) != AMX_ERR_NONE)
+	if (amx_SetCppString(amx, params[2], dest, params[3]) != AMX_ERR_NONE)
 	{
 		Logger::Get()->LogNative(samplog_LogLevel::ERROR, "couldn't set destination string");
 		return -1;
 	}
 
-	auto ret_val = static_cast<cell>(pawn_dest.length());
+	auto ret_val = static_cast<cell>(dest.length());
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", ret_val);
 	return ret_val;
 }
 
-// native DCC_CreateEmbedMessage(const title[] = "", const description[] = "", const url[] = "", const timestamp[] = "", int color = 0, const footer_text[] = "", const footer_icon_url[] = "", 
+// native DCC_CreateEmbedMessage(const title[] = "", const description[] = "", const url[] = "", const timestamp[] = "", int color = 0, const footer_text[] = "", const footer_icon_url[] = "",
 //		const thumbnail_url[] = "", const image_url[] = "");
 AMX_DECLARE_NATIVE(Native::DCC_CreateEmbed)
 {
 	ScopedDebugInfo dbg_info(amx, "DCC_CreateEmbed", params, "ssssdssss");
-	auto const title = GetPawnStr(amx, params[1]);
-	auto const description = GetPawnStr(amx, params[2]);
-	auto const url = GetPawnStr(amx, params[3]);
-	auto const timestamp = GetPawnStr(amx, params[4]);
+	auto const title = amx_GetCppString(amx, params[1]);
+	auto const description = amx_GetCppString(amx, params[2]);
+	auto const url = amx_GetCppString(amx, params[3]);
+	auto const timestamp = amx_GetCppString(amx, params[4]);
 	auto const color = static_cast<int>(params[5]);
-	auto const footer_text = GetPawnStr(amx, params[6]);
-	auto const footer_icon_url = GetPawnStr(amx, params[7]);
-	auto const thumbnail_url = GetPawnStr(amx, params[8]);
-	auto const image_url = GetPawnStr(amx, params[9]);
+	auto const footer_text = amx_GetCppString(amx, params[6]);
+	auto const footer_icon_url = amx_GetCppString(amx, params[7]);
+	auto const thumbnail_url = amx_GetCppString(amx, params[8]);
+	auto const image_url = amx_GetCppString(amx, params[9]);
 
 	EmbedId_t id = EmbedManager::Get()->AddEmbed(title, description, url, timestamp, color, footer_text, footer_icon_url, thumbnail_url, image_url);
 	if (!id)
@@ -2457,7 +2435,7 @@ AMX_DECLARE_NATIVE(Native::DCC_DeleteEmbed)
 	return 1;
 }
 
-// native DCC_SendChannelEmbedMessage(DCC_Channel:channel, DCC_Embed:embed, const message[] = "", 
+// native DCC_SendChannelEmbedMessage(DCC_Channel:channel, DCC_Embed:embed, const message[] = "",
 //     const callback[] = "", const format[] = "", {Float, _}:...);
 AMX_DECLARE_NATIVE(Native::DCC_SendChannelEmbedMessage)
 {
@@ -2479,8 +2457,8 @@ AMX_DECLARE_NATIVE(Native::DCC_SendChannelEmbedMessage)
 		return 0;
 	}
 
-	auto message = GetPawnStr(amx, params[3]);
-	if (Utf8CharCount(message) > 2000)
+	auto message = amx_GetCppString(amx, params[3]);
+	if (message.length() > 2000)
 	{
 		Logger::Get()->LogNative(samplog_LogLevel::ERROR,
 			"message must be shorter than 2000 characters");
@@ -2488,8 +2466,8 @@ AMX_DECLARE_NATIVE(Native::DCC_SendChannelEmbedMessage)
 	}
 
 	auto
-		cb_name = GetPawnStr(amx, params[4]),
-		cb_format = GetPawnStr(amx, params[5]);
+		cb_name = amx_GetCppString(amx, params[4]),
+		cb_format = amx_GetCppString(amx, params[5]);
 
 	pawn_cb::Error cb_error;
 	auto cb = pawn_cb::Callback::Prepare(
@@ -2518,8 +2496,8 @@ AMX_DECLARE_NATIVE(Native::DCC_AddEmbedField)
 		return 0;
 	}
 
-	auto const name = GetPawnStr(amx, params[2]);
-	auto const value = GetPawnStr(amx, params[3]);
+	auto const name = amx_GetCppString(amx, params[2]);
+	auto const value = amx_GetCppString(amx, params[3]);
 	auto const inline_ = static_cast<bool>(params[4]);
 	embed->AddField(name, value, inline_);
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '1'");
@@ -2538,7 +2516,7 @@ AMX_DECLARE_NATIVE(Native::DCC_SetEmbedTitle)
 		return 0;
 	}
 
-	auto const title = GetPawnStr(amx, params[2]);
+	auto const title = amx_GetCppString(amx, params[2]);
 	embed->SetTitle(title);
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '1'");
 	return 1;
@@ -2556,7 +2534,7 @@ AMX_DECLARE_NATIVE(Native::DCC_SetEmbedDescription)
 		return 0;
 	}
 
-	auto const description = GetPawnStr(amx, params[2]);
+	auto const description = amx_GetCppString(amx, params[2]);
 	embed->SetDescription(description);
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '1'");
 	return 1;
@@ -2574,7 +2552,7 @@ AMX_DECLARE_NATIVE(Native::DCC_SetEmbedUrl)
 		return 0;
 	}
 
-	auto const url = GetPawnStr(amx, params[2]);
+	auto const url = amx_GetCppString(amx, params[2]);
 	embed->SetUrl(url);
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '1'");
 	return 1;
@@ -2592,7 +2570,7 @@ AMX_DECLARE_NATIVE(Native::DCC_SetEmbedTimestamp)
 		return 0;
 	}
 
-	auto const timestamp = GetPawnStr(amx, params[2]);
+	auto const timestamp = amx_GetCppString(amx, params[2]);
 	embed->SetTimestamp(timestamp);
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '1'");
 	return 1;
@@ -2628,8 +2606,8 @@ AMX_DECLARE_NATIVE(Native::DCC_SetEmbedFooter)
 		return 0;
 	}
 
-	auto const text = GetPawnStr(amx, params[2]);
-	auto const icon_url = GetPawnStr(amx, params[3]);
+	auto const text = amx_GetCppString(amx, params[2]);
+	auto const icon_url = amx_GetCppString(amx, params[3]);
 	embed->SetFooterText(text);
 	embed->SetFooterIconUrl(icon_url);
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '1'");
@@ -2648,7 +2626,7 @@ AMX_DECLARE_NATIVE(Native::DCC_SetEmbedThumbnail)
 		return 0;
 	}
 
-	auto const url = GetPawnStr(amx, params[2]);
+	auto const url = amx_GetCppString(amx, params[2]);
 	embed->SetThumbnailUrl(url);
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '1'");
 	return 1;
@@ -2666,7 +2644,7 @@ AMX_DECLARE_NATIVE(Native::DCC_SetEmbedImage)
 		return 0;
 	}
 
-	auto const url = GetPawnStr(amx, params[2]);
+	auto const url = amx_GetCppString(amx, params[2]);
 	embed->SetImageUrl(url);
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '1'");
 	return 1;
@@ -2692,8 +2670,8 @@ AMX_DECLARE_NATIVE(Native::DCC_DeleteInternalMessage)
 AMX_DECLARE_NATIVE(Native::DCC_CreateEmoji)
 {
 	ScopedDebugInfo dbg_info(amx, "DCC_CreateEmoji", params, "ss");
-	const auto& name = GetPawnStr(amx, params[1]);
-	const auto& snowflake = GetPawnStr(amx, params[2]);
+	const auto& name = amx_GetCppString(amx, params[1]);
+	const auto& snowflake = amx_GetCppString(amx, params[2]);
 
 	EmojiId_t id = EmojiManager::Get()->AddEmoji(snowflake, name);
 	if (!id)
@@ -2736,14 +2714,13 @@ AMX_DECLARE_NATIVE(Native::DCC_GetEmojiName)
 	}
 
 	dest = emoji->GetName();
-	auto pawn_dest = utils::ToPawnEncoding(dest);
-	if (amx_SetCppString(amx, params[2], pawn_dest, params[3]) != AMX_ERR_NONE)
+	if (amx_SetCppString(amx, params[2], dest, params[3]) != AMX_ERR_NONE)
 	{
 		Logger::Get()->LogNative(samplog_LogLevel::ERROR, "couldn't set destination string");
 		return -1;
 	}
 
-	return pawn_dest.length();
+	return dest.length();
 }
 
 // native DCC_CreateReaction(DCC_Message:message, DCC_Emoji:reaction_emoji);
@@ -2802,8 +2779,8 @@ AMX_DECLARE_NATIVE(Native::DCC_EditMessage)
 		return 0;
 	}
 
-	const auto content = GetPawnStr(amx, params[2]);
-	if (Utf8CharCount(content) > 2000)
+	const auto content = amx_GetCppString(amx, params[2]);
+	if (content.length() > 2000)
 	{
 		Logger::Get()->LogNative(samplog_LogLevel::ERROR,
 			"message must be shorter than 2000 characters");
@@ -2839,8 +2816,8 @@ AMX_DECLARE_NATIVE(Native::DCC_SetMessagePersistent)
 AMX_DECLARE_NATIVE(Native::DCC_CacheChannelMessage)
 {
 	ScopedDebugInfo dbg_info(amx, "DCC_CacheChannelMessage", params, "ssss");
-	const auto& channel_snowflake = GetPawnStr(amx, params[1]);
-	const auto& message_snowflake = GetPawnStr(amx, params[2]);
+	const auto& channel_snowflake = amx_GetCppString(amx, params[1]);
+	const auto& message_snowflake = amx_GetCppString(amx, params[2]);
 
 	if (!channel_snowflake.length() || !message_snowflake.length())
 	{
@@ -2860,8 +2837,8 @@ AMX_DECLARE_NATIVE(Native::DCC_CacheChannelMessage)
 	}
 
 	auto
-		cb_name = GetPawnStr(amx, params[3]),
-		cb_format = GetPawnStr(amx, params[4]);
+		cb_name = amx_GetCppString(amx, params[3]),
+		cb_format = amx_GetCppString(amx, params[4]);
 
 	pawn_cb::Error cb_error;
 	auto cb = pawn_cb::Callback::Prepare(
@@ -2881,9 +2858,9 @@ AMX_DECLARE_NATIVE(Native::DCC_CacheChannelMessage)
 AMX_DECLARE_NATIVE(Native::DCC_CreateCommand)
 {
 	ScopedDebugInfo dbg_info(amx, "DCC_CreateCommand", params, "sssii");
-	const auto& name = GetPawnStr(amx, params[1]);
-	const auto& description = GetPawnStr(amx, params[2]);
-	const auto& callback = GetPawnStr(amx, params[3]);
+	const auto& name = amx_GetCppString(amx, params[1]);
+	const auto& description = amx_GetCppString(amx, params[2]);
+	const auto& callback = amx_GetCppString(amx, params[3]);
 	const auto& allow_everyone = static_cast<bool>(params[4]);
 	const auto& guild = static_cast<GuildId_t>(params[5]);
 	//const auto& permissions_size = static_cast<size_t>(params[6]);
@@ -2900,7 +2877,7 @@ AMX_DECLARE_NATIVE(Native::DCC_CreateCommand)
 		id = CommandManager::Get()->AddCommand(name, description);
 		auto & command = CommandManager::Get()->FindCommand(id);
 		command->SetCallback(callback);
-		
+
 		/*if (options_size)
 		{
 			cell* array = nullptr;
@@ -2924,13 +2901,13 @@ AMX_DECLARE_NATIVE(Native::DCC_CreateCommand)
 		/*if (permissions_size)
 		{
 			cell* array = nullptr;
-			
+
 			if (amx_GetAddr(amx, params[4], &array) != AMX_ERR_NONE)
 			{
 				Logger::Get()->LogNative(samplog_LogLevel::INFO, "unable to find the array for permissions");
 				return 0;
 			}
-			
+
 			int location = 0;
 			size_t i = permissions_size - 2; ignore default ""
 			for (; i != 0;)
@@ -2941,7 +2918,7 @@ AMX_DECLARE_NATIVE(Native::DCC_CreateCommand)
 				amx_GetString(&string[0], &array[location], 0, len + 1);
 				i -= len;
 				location += len + 1;
-				
+
 				if (string.length())
 				{
 					Logger::Get()->Log(samplog_LogLevel::ERROR, "role {} {}", string, i);
@@ -2956,22 +2933,115 @@ AMX_DECLARE_NATIVE(Native::DCC_CreateCommand)
 		{
 			Logger::Get()->LogNative(samplog_LogLevel::INFO, "command '{:s}' created with NO permissions!", name);
 		}*/
-		CommandOption_t option = std::unique_ptr<CommandOption>(new CommandOption());
-		option->SetType(COMMAND_OPTION_TYPE::OPTION_STRING);
-		option->SetName("arguments");
-		option->SetRequired(false);
-		option->SetDescription("just type");
 		command->AllowEveryone(allow_everyone);
-		command->AddOption("arguments", option);
+		if (g_PendingCommandOptions.empty())
+		{
+			CommandOption_t option = std::unique_ptr<CommandOption>(new CommandOption());
+			option->SetType(COMMAND_OPTION_TYPE::OPTION_STRING);
+			option->SetName("arguments");
+			option->SetRequired(false);
+			option->SetDescription("just type");
+			command->AddOption("arguments", option);
+		}
+		else
+		{
+			for (auto & pending_option : g_PendingCommandOptions)
+			{
+				command->AddOption(pending_option.second->GetName(), pending_option.second);
+			}
+			ClearPendingCommandOptions();
+		}
 		command->SetGuild(guild);
 		command->HandleNewCreation();
 	}
 	else
 	{
+		if (!g_PendingCommandOptions.empty())
+		{
+			Logger::Get()->LogNative(
+				samplog_LogLevel::WARNING,
+				"command '{}' already exists; pending options were ignored",
+				name);
+			ClearPendingCommandOptions();
+		}
 		auto & command = CommandManager::Get()->FindCommand(id);
 		command->SetCallback(callback);
 	}
 	return id;
+}
+
+// native DCC_GetInteractionOptionCount(DCC_Interaction:interaction, &option_count);
+AMX_DECLARE_NATIVE(Native::DCC_GetInteractionOptionCount)
+{
+	ScopedDebugInfo dbg_info(amx, "DCC_GetInteractionOptionCount", params, "dr");
+
+	CommandInteractionId_t id = params[1];
+	CommandInteraction_t const& interaction = CommandInteractionManager::Get()->FindCommandInteraction(id);
+	if (!interaction)
+	{
+		Logger::Get()->LogNative(samplog_LogLevel::ERROR, "invalid interaction id '{}'", id);
+		return 0;
+	}
+
+	cell* dest = nullptr;
+	if (amx_GetAddr(amx, params[2], &dest) != AMX_ERR_NONE || dest == nullptr)
+	{
+		Logger::Get()->LogNative(samplog_LogLevel::ERROR, "invalid reference");
+		return 0;
+	}
+
+	*dest = static_cast<cell>(interaction->GetOptions().size());
+
+	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '1'");
+	return 1;
+}
+
+// native DCC_GetInteractionOption(DCC_Interaction:interaction, offset, path[], value[], &DCC_CommandOptionType:type, path_size = sizeof path, value_size = sizeof value);
+AMX_DECLARE_NATIVE(Native::DCC_GetInteractionOption)
+{
+	ScopedDebugInfo dbg_info(amx, "DCC_GetInteractionOption", params, "ddssrdd");
+
+	CommandInteractionId_t id = params[1];
+	CommandInteraction_t const& interaction = CommandInteractionManager::Get()->FindCommandInteraction(id);
+	if (!interaction)
+	{
+		Logger::Get()->LogNative(samplog_LogLevel::ERROR, "invalid interaction id '{}'", id);
+		return 0;
+	}
+
+	auto const offset = static_cast<unsigned int>(params[2]);
+	auto const* option = interaction->GetOption(offset);
+	if (option == nullptr)
+	{
+		Logger::Get()->LogNative(samplog_LogLevel::ERROR,
+			"invalid offset '{}', max size is '{}'",
+			offset, interaction->GetOptions().size());
+		return 0;
+	}
+
+	cell* type_dest = nullptr;
+	if (amx_GetAddr(amx, params[5], &type_dest) != AMX_ERR_NONE || type_dest == nullptr)
+	{
+		Logger::Get()->LogNative(samplog_LogLevel::ERROR, "invalid reference");
+		return 0;
+	}
+
+	if (amx_SetCppString(amx, params[3], option->m_FullName, params[6]) != AMX_ERR_NONE)
+	{
+		Logger::Get()->LogNative(samplog_LogLevel::ERROR, "invalid path output buffer");
+		return 0;
+	}
+
+	if (amx_SetCppString(amx, params[4], option->m_Value, params[7]) != AMX_ERR_NONE)
+	{
+		Logger::Get()->LogNative(samplog_LogLevel::ERROR, "invalid value output buffer");
+		return 0;
+	}
+
+	*type_dest = static_cast<cell>(option->m_Type);
+
+	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '1'");
+	return 1;
 }
 
 // native DCC_GetInteractionMentionCount(DCC_Interaction:interaction, &mentioned_user_count);
@@ -3050,7 +3120,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetInteractionContent)
 	}
 
 	cell ret_val = amx_SetCppString(
-		amx, params[2], utils::ToPawnEncoding(interaction->GetOptions().at(0)->m_Value), params[3]) == AMX_ERR_NONE;
+		amx, params[2], interaction->GetContent(), params[3]) == AMX_ERR_NONE;
 
 	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", ret_val);
 	return ret_val;
@@ -3069,7 +3139,7 @@ AMX_DECLARE_NATIVE(Native::DCC_GetInteractionChannel)
 		return 0;
 	}
 
-	
+
 	cell* dest = nullptr;
 	if (amx_GetAddr(amx, params[2], &dest) != AMX_ERR_NONE || dest == nullptr)
 	{
@@ -3129,8 +3199,8 @@ AMX_DECLARE_NATIVE(Native::DCC_SendInteractionEmbed)
 		return 0;
 	}
 
-	auto message = GetPawnStr(amx, params[3]);
-	if (Utf8CharCount(message) > 2000)
+	auto message = amx_GetCppString(amx, params[3]);
+	if (message.length() > 2000)
 	{
 		Logger::Get()->LogNative(samplog_LogLevel::ERROR,
 			"message must be shorter than 2000 characters");
@@ -3156,8 +3226,8 @@ AMX_DECLARE_NATIVE(Native::DCC_SendInteractionMessage)
 		return 0;
 	}
 
-	auto message = GetPawnStr(amx, params[2]);
-	if (Utf8CharCount(message) > 2000)
+	auto message = amx_GetCppString(amx, params[2]);
+	if (message.length() > 2000)
 	{
 		Logger::Get()->LogNative(samplog_LogLevel::ERROR,
 			"message must be shorter than 2000 characters");
@@ -3188,18 +3258,90 @@ AMX_DECLARE_NATIVE(Native::DCC_DeleteCommand)
 	return 1;
 }
 
-/* Maybe this will work one day :))
-// native DCC_Option:DCC_AddCommandOption(const name[], const description[], type, bool:required = true, DCC_Option:parent_option);
 AMX_DECLARE_NATIVE(Native::DCC_AddCommandOption)
 {
-	const auto& name = GetPawnStr(amx, params[1]);
-	const auto& description = GetPawnStr(amx, params[2]);
-	int type = static_cast<int>(params[3]);
+	ScopedDebugInfo dbg_info(amx, "DCC_AddCommandOption", params, "ssiii");
+	const auto& name = amx_GetCppString(amx, params[1]);
+	const auto& description = amx_GetCppString(amx, params[2]);
+	const int type = static_cast<int>(params[3]);
 	bool required = static_cast<bool>(params[4]);
-	
-	return 1;
+	const cell parent_option_id = params[5];
+
+	if (name.empty() || description.empty())
+	{
+		Logger::Get()->LogNative(samplog_LogLevel::ERROR, "name/description must not be empty");
+		return 0;
+	}
+
+	if (type < static_cast<int>(COMMAND_OPTION_TYPE::OPTION_SUB_COMMAND) ||
+		type > static_cast<int>(COMMAND_OPTION_TYPE::OPTION_ROLE))
+	{
+		Logger::Get()->LogNative(samplog_LogLevel::ERROR, "invalid option type '{}'", type);
+		return 0;
+	}
+
+	if (type == static_cast<int>(COMMAND_OPTION_TYPE::OPTION_SUB_COMMAND) ||
+		type == static_cast<int>(COMMAND_OPTION_TYPE::OPTION_SUB_COMMAND_GROUP))
+	{
+		required = false;
+	}
+
+	CommandOption_t option = std::unique_ptr<CommandOption>(new CommandOption());
+	option->SetType(static_cast<COMMAND_OPTION_TYPE>(type));
+	option->SetName(name);
+	option->SetDescription(description);
+	option->SetRequired(required);
+
+	cell id = g_NextCommandOptionId++;
+	if (id == 0)
+	{
+		id = g_NextCommandOptionId++;
+	}
+
+	g_PendingCommandOptionIndex.emplace(id, option.get());
+
+	if (parent_option_id != 0)
+	{
+		auto parent_it = g_PendingCommandOptionIndex.find(parent_option_id);
+		if (parent_it == g_PendingCommandOptionIndex.end() || parent_it->second == nullptr)
+		{
+			Logger::Get()->LogNative(samplog_LogLevel::ERROR, "invalid parent option '{}'", parent_option_id);
+			g_PendingCommandOptionIndex.erase(id);
+			return 0;
+		}
+
+		COMMAND_OPTION_TYPE parent_type = parent_it->second->GetType();
+		if (parent_type == COMMAND_OPTION_TYPE::OPTION_SUB_COMMAND_GROUP &&
+			type != static_cast<int>(COMMAND_OPTION_TYPE::OPTION_SUB_COMMAND))
+		{
+			Logger::Get()->LogNative(
+				samplog_LogLevel::ERROR,
+				"sub-command groups may only contain sub-commands");
+			g_PendingCommandOptionIndex.erase(id);
+			return 0;
+		}
+
+		if (parent_type == COMMAND_OPTION_TYPE::OPTION_SUB_COMMAND &&
+			(type == static_cast<int>(COMMAND_OPTION_TYPE::OPTION_SUB_COMMAND) ||
+				type == static_cast<int>(COMMAND_OPTION_TYPE::OPTION_SUB_COMMAND_GROUP)))
+		{
+			Logger::Get()->LogNative(
+				samplog_LogLevel::ERROR,
+				"sub-commands may not contain sub-commands or sub-command groups");
+			g_PendingCommandOptionIndex.erase(id);
+			return 0;
+		}
+
+		parent_it->second->AddOption(option->GetName(), option);
+	}
+	else
+	{
+		g_PendingCommandOptions.emplace(id, std::move(option));
+	}
+
+	Logger::Get()->LogNative(samplog_LogLevel::DEBUG, "return value: '{}'", id);
+	return id;
 }
-*/
 
 // native DCC_SetCommandPermission(DCC_Command:command, DCC_Role:role, bool:enable);
 /*AMX_DECLARE_NATIVE(Native::DCC_SetCommandPermission)

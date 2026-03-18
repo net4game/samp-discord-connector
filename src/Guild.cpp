@@ -8,67 +8,6 @@
 #include "utils.hpp"
 
 #include <unordered_map>
-#include <memory>
-#include <chrono>
-
-namespace
-{
-	struct MemberChunkWork
-	{
-		Snowflake_t guild_id;
-		json members;
-		size_t index = 0;
-	};
-
-	void ProcessMemberChunk(std::shared_ptr<MemberChunkWork> const &work)
-	{
-		auto const &guild = GuildManager::Get()->FindGuildById(work->guild_id);
-		if (!guild)
-		{
-			Logger::Get()->Log(samplog_LogLevel::ERROR,
-				"can't sync offline guild members: guild id \"{}\" not cached", work->guild_id);
-			return;
-		}
-
-		// Time-slice member caching to avoid stalling the main server thread.
-		size_t processed = 0;
-		size_t const max_per_slice = 25;
-		auto const deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1);
-
-		while (work->index < work->members.size())
-		{
-			auto &m = work->members.at(work->index);
-			++work->index;
-
-			if (!utils::IsValidJson(m, "user", json::value_t::object))
-			{
-				Logger::Get()->Log(samplog_LogLevel::ERROR,
-					"invalid JSON: expected \"user\" in \"{}\"", m.dump());
-				break;
-			}
-
-			Guild::Member member;
-			auto const userid = UserManager::Get()->AddUser(m["user"]);
-			member.UserId = userid;
-			member.Update(m);
-			guild->AddMember(std::move(member));
-
-			++processed;
-			if (processed >= max_per_slice)
-				break;
-			if (std::chrono::steady_clock::now() >= deadline)
-				break;
-		}
-
-		if (work->index < work->members.size())
-		{
-			PawnDispatcher::Get()->Dispatch([work]() mutable
-			{
-				ProcessMemberChunk(work);
-			});
-		}
-	}
-}
 
 
 Guild::Guild(GuildId_t pawn_id, json const &data) :
@@ -889,14 +828,36 @@ void GuildManager::Initialize()
 				"invalid JSON: expected array \"members\" in \"{}\"", data.dump());
 		}
 
-		auto work = std::make_shared<MemberChunkWork>();
-		work->guild_id = guild_id;
-		work->members = data.at("members");
-		work->index = 0;
-
-		PawnDispatcher::Get()->Dispatch([work]() mutable
+		PawnDispatcher::Get()->Dispatch([guild_id, data]() mutable
 		{
-			ProcessMemberChunk(work);
+			auto const &guild = GuildManager::Get()->FindGuildById(guild_id);
+			if (!guild)
+			{
+				Logger::Get()->Log(samplog_LogLevel::ERROR,
+					"can't sync offline guild members: guild id \"{}\" not cached", guild_id);
+				return;
+			}
+
+			for (auto &m : data["members"])
+			{
+				if (!utils::IsValidJson(m, "user", json::value_t::object))
+				{
+					// we break here because all other array entries are likely
+					// to be invalid too, and we don't want to spam an error message
+					// for every single element in this array
+					Logger::Get()->Log(samplog_LogLevel::ERROR,
+						"invalid JSON: expected \"user\" in \"{}\"", m.dump());
+					break;
+				}
+
+				Guild::Member member;
+				// returns correct user if he already exists
+				auto const userid = UserManager::Get()->AddUser(m["user"]);
+				member.UserId = userid;
+				member.Update(m);
+
+				guild->AddMember(std::move(member));
+			}
 		});
 	});
 

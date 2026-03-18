@@ -136,6 +136,9 @@ namespace Native
 	AMX_DECLARE_NATIVE(DCC_CacheChannelMessage);
 
 	AMX_DECLARE_NATIVE(DCC_CreateCommand);
+	AMX_DECLARE_NATIVE(DCC_AddCommandOption);
+	AMX_DECLARE_NATIVE(DCC_GetInteractionOptionCount);
+	AMX_DECLARE_NATIVE(DCC_GetInteractionOption);
 	AMX_DECLARE_NATIVE(DCC_GetInteractionMentionCount);
 	AMX_DECLARE_NATIVE(DCC_GetInteractionMention);
 	AMX_DECLARE_NATIVE(DCC_GetInteractionContent);

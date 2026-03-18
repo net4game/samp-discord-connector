@@ -14,6 +14,19 @@
 #include <json.hpp>
 #include <regex>
 
+namespace
+{
+	std::string GetInteractionOptionValue(const json& value)
+	{
+		if (value.is_string())
+		{
+			return value.get<std::string>();
+		}
+
+		return value.dump();
+	}
+}
+
 CommandInteraction::CommandInteraction(CommandInteractionId_t id, UserId_t user, nlohmann::json const& interaction_json) :
 	m_InteractionUser(user)
 {
@@ -68,55 +81,101 @@ CommandInteraction::CommandInteraction(CommandInteractionId_t id, UserId_t user,
 
 void CommandInteraction::ParseOptions(nlohmann::json const& interaction_json, std::string const & guildid)
 {
-	CommandInteractionOption tmpoption;
-
-	//interaction_json.at("data").at("options")[0]
-
-	if (interaction_json.at("data").find("options") == interaction_json.at("data").end()) {
-		tmpoption.m_Type = COMMAND_OPTION_TYPE::OPTION_STRING;
-		tmpoption.m_Name = "";
-		tmpoption.m_Value = ""; 
+	auto data_it = interaction_json.find("data");
+	if (data_it == interaction_json.end())
+	{
+		return;
 	}
-	else {
-		auto first = interaction_json.at("data").at("options")[0];
-		tmpoption.m_Type = static_cast<COMMAND_OPTION_TYPE>(first.at("type").get<int>());
-		tmpoption.m_Name = first.at("name").get<std::string>();
-		utils::TryGetJsonValue(first, tmpoption.m_Value, "value");
 
-		if (tmpoption.m_Type == COMMAND_OPTION_TYPE::OPTION_STRING && guildid.length()) {
-			std::regex mentions("<@!\\s*(\\d+)\\s*>");
-			auto mentions_begin =
-				std::sregex_iterator(tmpoption.m_Value.begin(), tmpoption.m_Value.end(), mentions);
-			auto mentions_end = std::sregex_iterator();
+	auto options_it = data_it->find("options");
+	if (options_it == data_it->end() || !options_it->is_array())
+	{
+		return;
+	}
 
-			std::string guild_str;
-			utils::TryGetJsonValue(interaction_json, guild_str, "guild_id");
-			for (std::sregex_iterator i = mentions_begin; i != mentions_end; ++i) {
-				std::string match = (*i)[1].str();
-				const User_t & user = UserManager::Get()->FindUserById(match);
-				if (user->IsValid()) {
-					m_Mentions.push_back(user->GetPawnId());
-				}
-				
+	for (const auto& option_json : *options_it)
+	{
+		ParseOption(option_json, guildid);
+	}
+}
+
+void CommandInteraction::ParseOption(nlohmann::json const& option_json, std::string const& guildid, std::string const& parent_path)
+{
+	CommandInteractionOption tmpoption;
+	tmpoption.m_Type = static_cast<COMMAND_OPTION_TYPE>(option_json.at("type").get<int>());
+	tmpoption.m_Name = option_json.at("name").get<std::string>();
+	tmpoption.m_FullName = parent_path.empty() ? tmpoption.m_Name : fmt::format("{}.{:s}", parent_path, tmpoption.m_Name);
+
+	auto value_it = option_json.find("value");
+	if (value_it != option_json.end())
+	{
+		tmpoption.m_Value = GetInteractionOptionValue(*value_it);
+	}
+
+	if (tmpoption.m_Type == COMMAND_OPTION_TYPE::OPTION_STRING && !tmpoption.m_Value.empty() && !guildid.empty())
+	{
+		std::regex mentions("<@!\\s*(\\d+)\\s*>");
+		auto mentions_begin = std::sregex_iterator(tmpoption.m_Value.begin(), tmpoption.m_Value.end(), mentions);
+		auto mentions_end = std::sregex_iterator();
+
+		for (std::sregex_iterator i = mentions_begin; i != mentions_end; ++i)
+		{
+			std::string match = (*i)[1].str();
+			const User_t & user = UserManager::Get()->FindUserById(match);
+			if (user && user->IsValid())
+			{
+				m_Mentions.push_back(user->GetPawnId());
 			}
 		}
 	}
-	
+
 	CommandInteractionOption_t option = std::unique_ptr<CommandInteractionOption>(new CommandInteractionOption(std::move(tmpoption)));
 	AddInteractionOption(option);
-	/*
-	if (interaction_json.find("options") != interaction_json.end() && interaction_json.at("options").size())
+
+	auto child_options_it = option_json.find("options");
+	if (child_options_it != option_json.end() && child_options_it->is_array())
 	{
-		for (const auto& option_ : interaction_json.at("options").items())
+		for (const auto& child_option : *child_options_it)
 		{
-			ParseOptions(option_.value());
+			ParseOption(child_option, guildid, m_InteractionOptions.back()->m_FullName);
 		}
-	}*/
+	}
 }
 
 void CommandInteraction::AddInteractionOption(CommandInteractionOption_t & option)
 {
 	m_InteractionOptions.push_back(std::move(option));
+}
+
+CommandInteractionOption const * CommandInteraction::GetOption(std::size_t offset) const
+{
+	if (offset >= m_InteractionOptions.size())
+	{
+		return nullptr;
+	}
+
+	return m_InteractionOptions.at(offset).get();
+}
+
+std::string CommandInteraction::GetContent() const
+{
+	for (const auto& option : m_InteractionOptions)
+	{
+		if (option && !option->m_Value.empty())
+		{
+			return option->m_Value;
+		}
+	}
+
+	for (const auto& option : m_InteractionOptions)
+	{
+		if (option)
+		{
+			return option->m_FullName;
+		}
+	}
+
+	return "";
 }
 
 void CommandInteraction::SendEmbed(EmbedId_t embedid, const std::string message)

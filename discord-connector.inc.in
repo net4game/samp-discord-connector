@@ -59,6 +59,18 @@ enum DCC_MessageReactionType
 #define DCC_COMMAND_SIZE (32 + 1)
 #define DCC_COMMAND_DESCRIPTION_SIZE (32 + 1)
 
+enum DCC_CommandOptionType
+{
+	DCC_OPTION_SUB_COMMAND = 1,
+	DCC_OPTION_SUB_COMMAND_GROUP = 2,
+	DCC_OPTION_STRING = 3,
+	DCC_OPTION_INTEGER = 4,
+	DCC_OPTION_BOOLEAN = 5,
+	DCC_OPTION_USER = 6,
+	DCC_OPTION_CHANNEL = 7,
+	DCC_OPTION_ROLE = 8
+};
+
 // natives
 //  channels
 native DCC_Channel:DCC_FindChannelByName(const channel_name[]);
@@ -219,8 +231,11 @@ native DCC_DeleteMessageReaction(DCC_Message:message, DCC_Emoji:reaction_emoji =
 // commands
 native DCC_Command:DCC_CreateCommand(const command_name[DCC_COMMAND_SIZE], const description[DCC_COMMAND_DESCRIPTION_SIZE], const callback[], bool:allow_everyone = true, DCC_Guild:guild = DCC_INVALID_GUILD);
 native DCC_DeleteCommand(DCC_Command:command);
+native DCC_Option:DCC_AddCommandOption(const name[], const description[], DCC_CommandOptionType:type, bool:required = true, DCC_Option:parent_option = 0);
 
 // interactions
+native DCC_GetInteractionOptionCount(DCC_Interaction:interaction, &option_count);
+native DCC_GetInteractionOption(DCC_Interaction:interaction, offset, path[], value[], &DCC_CommandOptionType:type, path_size = sizeof path, value_size = sizeof value);
 native DCC_GetInteractionMentionCount(DCC_Interaction:interaction, &mentioned_user_count);
 native DCC_GetInteractionMention(DCC_Interaction:interaction, offset, &DCC_User:mentioned_user);
 native DCC_GetInteractionContent(DCC_Interaction:interaction, dest[], max_size = sizeof dest);

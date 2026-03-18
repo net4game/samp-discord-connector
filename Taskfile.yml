@@ -1,0 +1,25 @@
+version: "3"
+
+tasks:
+  earthly:
+    desc: Build using Earthly
+    cmds:
+      - earthly --ci +build --BUILD_TYPE={{.BUILD_TYPE}} --DCC_VERSION={{.DCC_VERSION}} --GH_ACBUILD=TRUE
+    vars:
+      BUILD_TYPE: '{{default "Release" .BUILD_TYPE}}'
+      DCC_VERSION: '{{default "dev" .DCC_VERSION}}'
+
+  local:
+    desc: Build locally
+    cmds:
+      - cmake -S . -B build -DCMAKE_BUILD_TYPE={{.BUILD_TYPE}} -DGH_ACBUILD=TRUE -DDCC_VERSION={{.DCC_VERSION}} {{.CMAKE_ARGS}}
+      - cmake --build build --config {{.BUILD_TYPE}}
+    vars:
+      BUILD_TYPE: '{{default "Release" .BUILD_TYPE}}'
+      DCC_VERSION: '{{default "dev" .DCC_VERSION}}'
+      CMAKE_ARGS: '{{default "" .CMAKE_ARGS}}'
+
+  local-clean:
+    desc: Clean local build directory
+    cmds:
+      - rm -rf build

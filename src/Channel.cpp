@@ -414,9 +414,9 @@ ChannelId_t ChannelManager::AddChannel(json const &data, GuildId_t guild_id/* = 
 		return INVALID_CHANNEL_ID;
 	}
 
-	auto it_sfid = m_ChannelBySfid.find(sfid);
-	if (it_sfid != m_ChannelBySfid.end())
-		return it_sfid->second;
+	Channel_t const& channel = FindChannelById(sfid);
+	if (channel)
+		return channel->GetPawnId(); // channel already exists
 
 	ChannelId_t id = 1;
 	while (m_Channels.find(id) != m_Channels.end())
@@ -429,7 +429,6 @@ ChannelId_t ChannelManager::AddChannel(json const &data, GuildId_t guild_id/* = 
 		return INVALID_CHANNEL_ID;
 	}
 
-	m_ChannelBySfid.emplace(std::move(sfid), id);
 	Logger::Get()->Log(samplog_LogLevel::INFO, "successfully added channel with id '{}'", id);
 	return id;
 }
@@ -444,9 +443,9 @@ ChannelId_t ChannelManager::AddDMChannel(json const& data)
 		return INVALID_CHANNEL_ID;
 	}
 
-	auto it_sfid = m_ChannelBySfid.find(sfid);
-	if (it_sfid != m_ChannelBySfid.end())
-		return it_sfid->second;
+	Channel_t const& channel = FindChannelById(sfid);
+	if (channel)
+		return channel->GetPawnId(); // channel already exists
 
 	ChannelId_t id = 1;
 	while (m_Channels.find(id) != m_Channels.end())
@@ -459,7 +458,6 @@ ChannelId_t ChannelManager::AddDMChannel(json const& data)
 		return INVALID_CHANNEL_ID;
 	}
 
-	m_ChannelBySfid.emplace(std::move(sfid), id);
 	Logger::Get()->Log(samplog_LogLevel::INFO, "successfully added channel with id '{}'", id);
 	return id;
 }
@@ -492,7 +490,6 @@ void ChannelManager::DeleteChannel(json const &data)
 		if (guild)
 			guild->RemoveChannel(channel->GetPawnId());
 
-		m_ChannelBySfid.erase(sfid);
 		m_Channels.erase(channel->GetPawnId());
 	});
 
@@ -522,8 +519,11 @@ Channel_t const &ChannelManager::FindChannelByName(std::string const &name)
 Channel_t const &ChannelManager::FindChannelById(Snowflake_t const &sfid)
 {
 	static Channel_t invalid_channel;
-	auto it_sfid = m_ChannelBySfid.find(sfid);
-	if (it_sfid == m_ChannelBySfid.end())
-		return invalid_channel;
-	return FindChannel(it_sfid->second);
+	for (auto const &c : m_Channels)
+	{
+		Channel_t const &channel = c.second;
+		if (channel->GetId().compare(sfid) == 0)
+			return channel;
+	}
+	return invalid_channel;
 }

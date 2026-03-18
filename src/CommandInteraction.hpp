@@ -19,6 +19,7 @@ struct CommandInteractionOption
 {
 	COMMAND_OPTION_TYPE m_Type;
 	std::string m_Name;
+	std::string m_FullName;
 	std::string m_Value;
 };
 
@@ -28,7 +29,9 @@ public:
 	CommandInteraction(CommandInteractionId_t id, UserId_t user, nlohmann::json const& interaction_json);
 	~CommandInteraction() = default;
 	void ParseOptions(nlohmann::json const& interaction_json, std::string const& guildid);
+	void ParseOption(nlohmann::json const& option_json, std::string const& guildid, std::string const& parent_path = "");
 	void AddInteractionOption(CommandInteractionOption_t &option);
+	std::string GetContent() const;
 
 	CommandInteractionId_t GetPawnId()
 	{
@@ -54,6 +57,8 @@ public:
 	{
 		return m_InteractionOptions;
 	}
+
+	CommandInteractionOption const * GetOption(std::size_t offset) const;
 
 	void SendEmbed(EmbedId_t embedid, const std::string message = "");
 	void SendInteractionMessage(const std::string message);

@@ -1,9 +1,10 @@
-include(AMXConfig)
-include(AddSAMPPlugin)
-
-
-set(SAMP_SDK_ROOT "${PROJECT_SOURCE_DIR}/libs/sdk")
-find_package(SAMPSDK REQUIRED)
+sampcmake_use_plugin_sdk(
+	REQUIRED
+	ROOT "${PROJECT_SOURCE_DIR}/libs/sdk"
+	OUT_TARGET SAMPSDK_TARGET
+	OUT_DIR SAMPSDK_DIR
+	OUT_INCLUDE_DIR SAMPSDK_INCLUDE_DIR
+)
 
 set(DCC_CONFIG_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/config_headers")
 
@@ -20,7 +21,8 @@ configure_file(
 )
 
 
-add_samp_plugin(discord-connector 
+sampcmake_add_samp_plugin(discord-connector
+	SOURCES
 	${SAMPSDK_DIR}/amxplugin.cpp
 	${SAMPSDK_DIR}/amxplugin2.cpp
 	Bot.cpp
@@ -58,8 +60,6 @@ add_samp_plugin(discord-connector
 	Command.hpp
 	CommandInteraction.cpp
 	CommandInteraction.hpp
-	Encoding.cpp
-	Encoding.hpp
 	main.cpp
 	misc.hpp
 	natives.cpp
@@ -69,6 +69,8 @@ add_samp_plugin(discord-connector
 	utils.hpp
 	plugin.def
 )
+
+sampcmake_configure_amx(TARGET discord-connector)
 
 if (UNIX)
 	target_sources(discord-connector PUBLIC ${SAMPSDK_DIR}/amx/getch.c)
@@ -104,6 +106,7 @@ set_target_properties(discord-connector
 endif()
 
 target_include_directories(discord-connector PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}
 	${OPENSSL_INCLUDE_DIR}
 	${SAMPSDK_INCLUDE_DIR}
 	${DCC_CONFIG_INCLUDE_DIR}
@@ -125,11 +128,11 @@ if(MSVC)
 endif()
 
 target_compile_definitions(discord-connector PRIVATE ONLY_C_LOCALE) # make the date library use the C locale only
+target_compile_definitions(discord-connector PRIVATE BOOST_ERROR_CODE_HEADER_ONLY)
 if(USING_BOOST_NO_CONAN)
-	target_include_directories(discord-connector PUBLIC ${Boost_INCLUDE_DIR})
-	target_link_libraries(discord-connector ${Boost_LIBRARIES})
+	target_include_directories(discord-connector PUBLIC ${Boost_INCLUDE_DIRS})
 else()
-	target_link_libraries(discord-connector CONAN_PKG::boost)
+	target_include_directories(discord-connector PUBLIC ${Boost_INCLUDE_DIRS})
 endif()
 
 if(USING_OPENSSL_NO_CONAN)
@@ -139,7 +142,7 @@ else()
 	target_link_libraries(discord-connector CONAN_PKG::openssl)
 endif()
 
-target_link_libraries(discord-connector log-core CONAN_PKG::fmt OMP-SDK)
+target_link_libraries(discord-connector ${SAMPSDK_TARGET} log-core CONAN_PKG::fmt)
 
 if(UNIX)
 	if(NOT APPLE)

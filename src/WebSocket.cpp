@@ -469,7 +469,7 @@ void WebSocket::Identify()
 			{ "properties",{
 				{ "$os", os_name },
 				{ "$browser", BOOST_BEAST_VERSION_STRING },
-				{ "$device", "SA-MP/open.mp DCC plugin" },
+				{ "$device", "SA-MP DCC plugin" },
 				{ "$referrer", "" },
 				{ "$referring_domain", "" }
 			} }

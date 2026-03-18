@@ -6,12 +6,17 @@ if (NOT DCC_VERSION) # allow version override
 	set(DCC_VERSION ${PROJECT_VERSION})
 endif()
 
+# Conan builds of some third-party packages require CMake policy minimum set.
+set(ENV{CMAKE_POLICY_VERSION_MINIMUM} "3.5")
+
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/libs/cmake")
+include(SAMPPluginToolkit)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 
 if(MSVC)
 	set(CMAKE_BUILD_TYPE "" CACHE STRING "" FORCE)
+	add_compile_definitions(_SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING) # silence deprecation warning for stdext::make_checked_array_iterator in fmt 7.1.3
 endif()
 
 if(UNIX)
@@ -26,7 +31,21 @@ if(UNIX)
 endif()
 
 # -- CONAN
+# cmake-conan 0.18.1 doesn't recognize MSVC 19.44+ (VS2022 17.10+).
+# Temporarily clamp MSVC_VERSION for conan detection only.
+if(MSVC AND MSVC_VERSION GREATER_EQUAL 1940)
+	set(DCC_ORIG_MSVC_VERSION "${MSVC_VERSION}")
+	set(MSVC_VERSION 1939)
+	set(DCC_CONAN_MSVC_VERSION_OVERRIDDEN TRUE)
+endif()
+
 include(libs/cmake-conan/conan.cmake)
+if(MSVC)
+	set(CONAN_SETTINGS_WINDOWS
+		"compiler.version=17"
+		"compiler.toolset=v143"
+	)
+endif()
 function(add_conan_lib pkg_name conan_pkg)
 	conan_check(REQUIRED)
 
@@ -35,6 +54,7 @@ function(add_conan_lib pkg_name conan_pkg)
 		ARCH x86
 		BASIC_SETUP CMAKE_TARGETS
 		BUILD missing
+		SETTINGS ${CONAN_SETTINGS_WINDOWS}
 	)
 
 	set_target_properties(${pkg_name} PROPERTIES IMPORTED_GLOBAL TRUE)
@@ -77,7 +97,8 @@ if(USING_BOOST_NO_CONAN)
 	endif()
 	mark_as_advanced(BOOST_ROOT Boost_DIR)
 
-	set(Boost_INCLUDE_DIR "${Boost_INCLUDE_DIR}" PARENT_SCOPE)
+	set(Boost_INCLUDE_DIRS "${Boost_INCLUDE_DIRS}" CACHE INTERNAL "Boost include directories")
+	set(Boost_INCLUDE_DIR "${Boost_INCLUDE_DIR}" CACHE INTERNAL "Boost include directory")
 else()
 	conan_check(REQUIRED)
 	conan_cmake_run(
@@ -85,9 +106,12 @@ else()
 		ARCH x86
 		BASIC_SETUP CMAKE_TARGETS
 		BUILD missing
-		OPTIONS boost:zlib=False
+		OPTIONS boost:header_only=True boost:zlib=False
+		SETTINGS ${CONAN_SETTINGS_WINDOWS}
 	)
 	set_target_properties(CONAN_PKG::boost PROPERTIES IMPORTED_GLOBAL TRUE)
+	get_target_property(DCC_BOOST_INCLUDE_DIRS CONAN_PKG::boost INTERFACE_INCLUDE_DIRECTORIES)
+	set(Boost_INCLUDE_DIRS "${DCC_BOOST_INCLUDE_DIRS}" CACHE INTERNAL "Boost include directories")
 endif()
 
 set(CONAN_HAS_FMT TRUE CACHE INTERNAL FALSE)
@@ -97,6 +121,9 @@ if(USING_OPENSSL_NO_CONAN)
 	if(NOT DEFINED OPENSSL_USE_STATIC_LIBS)
 		set(OPENSSL_USE_STATIC_LIBS ON)
 		set(OPENSSL_MSVC_STATIC_RT ON)
+	endif()
+	if(DEFINED OPENSSL_ROOT AND NOT DEFINED OPENSSL_ROOT_DIR)
+		set(OPENSSL_ROOT_DIR "${OPENSSL_ROOT}")
 	endif()
 	find_package(OpenSSL)
 	if (NOT OPENSSL_FOUND)
@@ -109,5 +136,10 @@ else()
 endif()
 
 add_subdirectory(libs/log-core)
-add_subdirectory(libs/omp-sdk)
 add_subdirectory(src)
+
+if(DCC_CONAN_MSVC_VERSION_OVERRIDDEN)
+	set(MSVC_VERSION "${DCC_ORIG_MSVC_VERSION}")
+	unset(DCC_ORIG_MSVC_VERSION)
+	unset(DCC_CONAN_MSVC_VERSION_OVERRIDDEN)
+endif()

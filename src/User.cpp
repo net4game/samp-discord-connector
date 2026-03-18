@@ -107,9 +107,9 @@ UserId_t UserManager::AddUser(json const &data)
 		return INVALID_USER_ID;
 	}
 
-	auto it_sfid = m_UserBySfid.find(sfid);
-	if (it_sfid != m_UserBySfid.end())
-		return it_sfid->second;
+	User_t const &user = FindUserById(sfid);
+	if (user)
+		return user->GetPawnId();
 
 	UserId_t id = 1;
 	while (m_Users.find(id) != m_Users.end())
@@ -122,7 +122,6 @@ UserId_t UserManager::AddUser(json const &data)
 		return INVALID_USER_ID;
 	}
 
-	m_UserBySfid.emplace(std::move(sfid), id);
 	Logger::Get()->Log(samplog_LogLevel::INFO, "successfully created user with id '{}'", id);
 	return id;
 }
@@ -155,8 +154,11 @@ User_t const &UserManager::FindUserByName(
 User_t const &UserManager::FindUserById(Snowflake_t const &sfid)
 {
 	static User_t invalid_user;
-	auto it_sfid = m_UserBySfid.find(sfid);
-	if (it_sfid == m_UserBySfid.end())
-		return invalid_user;
-	return FindUser(it_sfid->second);
+	for (auto const &u : m_Users)
+	{
+		User_t const &user = u.second;
+		if (user->GetId().compare(sfid) == 0)
+			return user;
+	}
+	return invalid_user;
 }

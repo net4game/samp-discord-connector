@@ -1,21 +1,18 @@
 [submodule "libs/sdk"]
 	path = libs/sdk
-	url = https://github.com/maddinat0r/samp-plugin-sdk.git
-[submodule "libs/cmake"]
-	path = libs/cmake
-	url = https://github.com/AmyrAhmady/samp-cmake-modules
+	url = https://github.com/ADRFranklin/samp-plugin-sdk
 [submodule "libs/date"]
 	path = libs/date
 	url = https://github.com/HowardHinnant/date.git
 [submodule "libs/fmt"]
 	path = libs/fmt
 	url = https://github.com/fmtlib/fmt.git
-[submodule "libs/log-core"]
-	path = libs/log-core
-	url = https://github.com/ToffyMTA/samp-log-core
 [submodule "libs/cmake-conan"]
 	path = libs/cmake-conan
-	url = https://github.com/conan-io/cmake-conan
-[submodule "libs/omp-sdk"]
-	path = libs/omp-sdk
-	url = https://github.com/openmultiplayer/open.mp-sdk
+	url = https://github.com/ADRFranklin/samp-conan-cmake
+[submodule "libs/log-core"]
+	path = libs/log-core
+	url = https://github.com/ADRFranklin/samp-log-core.git
+[submodule "libs/cmake"]
+	path = libs/cmake
+	url = https://github.com/ADRFranklin/samp-cmake
