@@ -14,10 +14,27 @@
 #include <samplog/samplog.hpp>
 #include <thread>
 #include <cstdlib>
+#include <mutex>
+
+#include <openssl/ssl.h>
+#include <openssl/crypto.h>
 
 extern void	*pAMXFunctions;
 logprintf_t logprintf;
 #define ALL_INTENTS 131071
+
+static void InitOpenSSLOnce()
+{
+	static std::once_flag once;
+	std::call_once(once, []()
+	{
+		// Some plugin hosts/mods initialize OpenSSL differently (or with a different
+		// OpenSSL version). Explicit init prevents errors like:
+		// "uninitialized (BIO routines)" during SSL handshake.
+		OPENSSL_init_ssl(0, nullptr);
+		OPENSSL_init_crypto(0, nullptr);
+	});
+}
 
 void InitializeEverything(std::string const &bot_token, int intents)
 {
@@ -75,6 +92,8 @@ PLUGIN_EXPORT unsigned int PLUGIN_CALL Supports()
 
 PLUGIN_EXPORT bool PLUGIN_CALL Load(void **ppData)
 {
+	InitOpenSSLOnce();
+
 	pAMXFunctions = ppData[PLUGIN_DATA_AMX_EXPORTS];
 	logprintf = (logprintf_t)ppData[PLUGIN_DATA_LOGPRINTF];
 

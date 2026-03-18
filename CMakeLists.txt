@@ -132,7 +132,7 @@ if(USING_OPENSSL_NO_CONAN)
 		message(FATAL_ERROR "Could NOT find OpenSSL; specify additional paths.")
 	endif()
 else()
-	add_conan_lib(CONAN_PKG::openssl openssl/1.1.1k)
+	add_conan_lib(CONAN_PKG::openssl openssl/3.0.13)
 endif()
 
 add_subdirectory(libs/log-core)

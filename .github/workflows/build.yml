@@ -36,7 +36,7 @@ jobs:
         build-type: [Release]
         include:
           #- os: windows-latest
-          #  cmake-args: "-AWin32 -T v143,host=x86 -DGH_ACBUILD=TRUE -DUSING_BOOST_NO_CONAN=TRUE -DUSING_OPENSSL_NO_CONAN=TRUE -DBoost_NO_BOOST_CMAKE=ON -DCONAN_DISABLE_CHECK_COMPILER=ON"
+          #  cmake-args: "-AWin32 -T v143,host=x86 -DGH_ACBUILD=TRUE -DUSING_BOOST_NO_CONAN=TRUE -DBoost_NO_BOOST_CMAKE=ON -DCONAN_DISABLE_CHECK_COMPILER=ON"
           - os: ubuntu-24.04
             cmake-args: "-DCMAKE_CXX_FLAGS=-m32 -DCMAKE_C_FLAGS=-m32 -DGH_ACBUILD=TRUE"
 
@@ -123,40 +123,6 @@ jobs:
         shell: bash
 
       - if: runner.os == 'Windows'
-        name: Cache OpenSSL 1.1.1w
-        uses: actions/cache@v4
-        with:
-          path: C:\local\openssl-1.1.1w
-          key: openssl-1.1.1w-win32
-
-      - if: runner.os == 'Windows'
-        name: Install OpenSSL 1.1.1w (Win32)
-        run: |
-          $opensslRoot = "C:\local\openssl-1.1.1w"
-          if (Test-Path $opensslRoot) {
-            Write-Host "OpenSSL already cached at $opensslRoot"
-            exit 0
-          }
-          $url = "https://slproweb.com/download/Win32OpenSSL-1_1_1w.exe"
-          $sha256 = "7d2098dce53032009790b596e396bb53c1894a1b4339a67befebf1848cb2ff33"
-          $exe = Join-Path $env:TEMP "Win32OpenSSL-1_1_1w.exe"
-          Invoke-WebRequest -Uri $url -OutFile $exe
-          $actual = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
-          if ($actual -ne $sha256) {
-            Write-Error "OpenSSL SHA256 mismatch. Expected $sha256, got $actual"
-            exit 1
-          }
-          Start-Process -Wait -FilePath $exe -ArgumentList "/silent","/verysilent","/sp-","/suppressmsgboxes","/dir=$opensslRoot"
-        shell: pwsh
-
-      - if: runner.os == 'Windows'
-        name: Setup openssl envvar
-        shell: pwsh
-        run: |
-          Add-Content -Path $env:GITHUB_ENV -Value "OPENSSL_ROOT=C:\local\openssl-1.1.1w"
-          Add-Content -Path $env:GITHUB_ENV -Value "OPENSSL_ROOT_DIR=C:\local\openssl-1.1.1w"
-
-      - if: runner.os == 'Windows'
         name: Get python
         uses: actions/setup-python@v5
         with:
@@ -195,7 +161,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake .. ${{ matrix.cmake-args }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DDCC_VERSION="${{ env.REPO_TAG }}" -DBOOST_ROOT="$env:BOOST_ROOT" -DOPENSSL_ROOT_DIR="$env:OPENSSL_ROOT_DIR"
+          cmake .. ${{ matrix.cmake-args }} -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DDCC_VERSION="${{ env.REPO_TAG }}" -DBOOST_ROOT="$env:BOOST_ROOT"
 
       - if: runner.os == 'Linux'
         name: Setup Earthly

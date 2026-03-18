@@ -177,16 +177,6 @@ void WebSocket::OnHandshake(beast::error_code ec)
 		SendResumePayload();
 	else
 		Identify();
-
-	// If plugin code requested presence/activity before the websocket connected,
-	// send it now that we have a websocket stream.
-	if (m_HasPendingStatus)
-	{
-		auto pending_status = m_PendingStatus;
-		auto pending_activity = m_PendingActivityName;
-		m_HasPendingStatus = false;
-		UpdateStatus(pending_status, pending_activity);
-	}
 }
 
 void WebSocket::Disconnect(bool reconnect /*= false*/)
@@ -437,6 +427,16 @@ void WebSocket::OnRead(beast::error_code ec,
 		// start heartbeat
 		m_HeartbeatInterval = std::chrono::milliseconds(result["d"]["heartbeat_interval"]);
 		DoHeartbeat({});
+
+		// If plugin code requested presence/activity before we got "Hello",
+		// apply it now (after the gateway handshake is complete).
+		if (m_HasPendingStatus)
+		{
+			auto pending_status = m_PendingStatus;
+			auto pending_activity = m_PendingActivityName;
+			m_HasPendingStatus = false;
+			UpdateStatus(pending_status, pending_activity);
+		}
 		break;
 	case 11: // heartbeat ACK
 		Logger::Get()->Log(samplog_LogLevel::DEBUG, "heartbeat ACK");
