@@ -31,8 +31,7 @@ WebSocket::~WebSocket()
 	if (_websocket)
 	{
 		// Cancel pending async ops (read/write/handshake) so shutdown doesn't hang.
-		beast::error_code ec;
-		beast::get_lowest_layer(*_websocket).cancel(ec);
+		beast::get_lowest_layer(*_websocket).cancel();
 	}
 
 	Disconnect(false);
