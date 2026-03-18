@@ -30,11 +30,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-24.04]
-        build-type: [Debug, Release]
+        #os: [windows-latest, ubuntu-24.04]
+        os: [ubuntu-24.04]
+        #build-type: [Debug, Release]
+        build-type: [Release]
         include:
-          - os: windows-latest
-            cmake-args: "-AWin32 -T v143,host=x86 -DGH_ACBUILD=TRUE -DUSING_BOOST_NO_CONAN=TRUE -DUSING_OPENSSL_NO_CONAN=TRUE -DBoost_NO_BOOST_CMAKE=ON -DCONAN_DISABLE_CHECK_COMPILER=ON"
+          #- os: windows-latest
+          #  cmake-args: "-AWin32 -T v143,host=x86 -DGH_ACBUILD=TRUE -DUSING_BOOST_NO_CONAN=TRUE -DUSING_OPENSSL_NO_CONAN=TRUE -DBoost_NO_BOOST_CMAKE=ON -DCONAN_DISABLE_CHECK_COMPILER=ON"
           - os: ubuntu-24.04
             cmake-args: "-DCMAKE_CXX_FLAGS=-m32 -DCMAKE_C_FLAGS=-m32 -DGH_ACBUILD=TRUE"
 

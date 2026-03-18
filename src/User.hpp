@@ -5,6 +5,7 @@
 
 #include <string>
 #include <atomic>
+#include <unordered_map>
 
 #include <json.hpp>
 
@@ -84,6 +85,7 @@ private:
 	std::atomic<unsigned int> m_Initialized{ 0 };
 
 	std::map<UserId_t, User_t> m_Users; //PAWN user-id to actual channel map
+	std::unordered_map<Snowflake_t, UserId_t> m_UserBySfid;
 
 
 public:
