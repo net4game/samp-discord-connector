@@ -135,11 +135,16 @@ PLUGIN_EXPORT bool PLUGIN_CALL Load(void **ppData)
 				while (true)
 				{
 					std::this_thread::sleep_for(std::chrono::minutes(1));
-
+					logprintf(" >> discord-connector: retry thread: tearing down old network...");
 					DestroyEverything();
+					logprintf(" >> discord-connector: retry thread: re-initializing...");
 					InitializeEverything(bot_token, intents);
+					logprintf(" >> discord-connector: retry thread: waiting for initialization events...");
 					if (WaitForInitialization())
+					{
+						logprintf(" >> discord-connector: retry thread: re-initialized successfully.");
 						break;
+					}
 				}
 			});
 			init_thread.detach();

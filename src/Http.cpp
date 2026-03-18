@@ -4,6 +4,7 @@
 #include "version.hpp"
 
 #include <boost/asio/system_timer.hpp>
+#include <boost/asio/ip/tcp.hpp>
 #include <boost/beast/version.hpp>
 
 Http::Http(std::string token) :
@@ -297,13 +298,13 @@ void Http::Disconnect()
 	if (!m_SslStream)
 		return;
 
+	// This class uses synchronous blocking Beast/Asio calls in `NetworkThreadFunc`.
+	// To make shutdown/retry responsive, we avoid SSL shutdown (which can block),
+	// and instead close the underlying TCP socket to interrupt any in-progress IO.
 	boost::system::error_code error;
-	m_SslStream->shutdown(error);
-	if (error && error != boost::asio::error::eof && error != boost::asio::ssl::error::stream_truncated)
-	{
-		Logger::Get()->Log(samplog_LogLevel::WARNING, "Error while shutting down SSL on HTTP connection: {} ({})",
-			error.message(), error.value());
-	}
+	auto& lowest_layer = beast::get_lowest_layer(*m_SslStream); // beast::tcp_stream
+	lowest_layer.socket().shutdown(asio::ip::tcp::socket::shutdown_both, error);
+	lowest_layer.socket().close(error);
 }
 
 bool Http::ReconnectRetry()

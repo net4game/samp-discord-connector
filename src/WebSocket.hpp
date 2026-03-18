@@ -123,6 +123,12 @@ private: // variables
 	std::multimap<Event, EventCallback_t> m_EventMap;
 	int _intents;
 
+	// Cached presence payload for cases where plugin code calls UpdateStatus()
+	// before the websocket is fully connected/authenticated.
+	bool m_HasPendingStatus = false;
+	std::string m_PendingStatus;
+	std::string m_PendingActivityName;
+
 private: // functions
 	void Initialize(std::string token, std::string gateway_url, int intents);
 

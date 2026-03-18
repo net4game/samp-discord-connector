@@ -177,6 +177,16 @@ void WebSocket::OnHandshake(beast::error_code ec)
 		SendResumePayload();
 	else
 		Identify();
+
+	// If plugin code requested presence/activity before the websocket connected,
+	// send it now that we have a websocket stream.
+	if (m_HasPendingStatus)
+	{
+		auto pending_status = m_PendingStatus;
+		auto pending_activity = m_PendingActivityName;
+		m_HasPendingStatus = false;
+		UpdateStatus(pending_status, pending_activity);
+	}
 }
 
 void WebSocket::Disconnect(bool reconnect /*= false*/)
@@ -443,6 +453,12 @@ void WebSocket::Write(std::string const &data)
 {
 	Logger::Get()->Log(samplog_LogLevel::DEBUG, "WebSocket::Write");
 
+	if (!_websocket)
+	{
+		Logger::Get()->Log(samplog_LogLevel::WARNING, "WebSocket::Write called while websocket not connected; ignoring.");
+		return;
+	}
+
 	_websocket->async_write(
 		asio::buffer(data),
 		beast::bind_front_handler(
@@ -533,6 +549,16 @@ void WebSocket::RequestGuildMembers(std::string guild_id)
 void WebSocket::UpdateStatus(std::string const &status, std::string const &activity_name)
 {
 	Logger::Get()->Log(samplog_LogLevel::DEBUG, "WebSocket::UpdateStatus");
+
+	// If the websocket isn't connected yet, cache the desired presence payload
+	// so the next successful connection can apply it.
+	if (!_websocket)
+	{
+		m_PendingStatus = status;
+		m_PendingActivityName = activity_name;
+		m_HasPendingStatus = true;
+		return;
+	}
 
 	json payload = {
 		{ "op", 3 },
