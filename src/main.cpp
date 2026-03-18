@@ -31,11 +31,11 @@ void InitializeEverything(std::string const &bot_token, int intents)
 
 void DestroyEverything()
 {
+	Network::Singleton::Destroy();
 	MessageManager::Singleton::Destroy();
 	ChannelManager::Singleton::Destroy();
 	UserManager::Singleton::Destroy();
 	GuildManager::Singleton::Destroy();
-	Network::Singleton::Destroy();
 }
 
 bool WaitForInitialization()

@@ -18,6 +18,8 @@ Http::Http(std::string token) :
 Http::~Http()
 {
 	m_NetworkThreadRunning = false;
+	// Unblock any in-progress blocking IO so join() doesn't hang during plugin unload.
+	Disconnect();
 	m_NetworkThread.join();
 
 	// drain requests queue
@@ -292,6 +294,9 @@ void Http::Disconnect()
 {
 	Logger::Get()->Log(samplog_LogLevel::DEBUG, "Http::Disconnect");
 
+	if (!m_SslStream)
+		return;
+
 	boost::system::error_code error;
 	m_SslStream->shutdown(error);
 	if (error && error != boost::asio::error::eof && error != boost::asio::ssl::error::stream_truncated)
@@ -308,6 +313,9 @@ bool Http::ReconnectRetry()
 	unsigned int reconnect_counter = 0;
 	do
 	{
+		if (!m_NetworkThreadRunning)
+			return false;
+
 		Logger::Get()->Log(samplog_LogLevel::INFO, "trying reconnect #{}...", reconnect_counter + 1);
 
 		Disconnect();
@@ -320,6 +328,8 @@ bool Http::ReconnectRetry()
 		{
 			unsigned int seconds_to_wait = static_cast<unsigned int>(std::pow(2U, reconnect_counter));
 			Logger::Get()->Log(samplog_LogLevel::WARNING, "reconnect failed, waiting {} seconds...", seconds_to_wait);
+			if (!m_NetworkThreadRunning)
+				return false;
 			std::this_thread::sleep_for(std::chrono::seconds(seconds_to_wait));
 		}
 	} while (++reconnect_counter < 3);

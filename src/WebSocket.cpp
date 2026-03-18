@@ -21,9 +21,25 @@ WebSocket::~WebSocket()
 {
 	Logger::Get()->Log(samplog_LogLevel::DEBUG, "WebSocket::~WebSocket");
 
-	Disconnect();
+	// Best-effort shutdown:
+	// - cancel timers so `io_context.run()` can finish
+	// - stop the io_context to guarantee the net thread unblocks
+	// - join the background thread (only after we've signaled shutdown)
+	m_HeartbeatTimer.cancel();
+	_reconnectTimer.cancel();
 
-	if (_netThread)
+	if (_websocket)
+	{
+		// Cancel pending async ops (read/write/handshake) so shutdown doesn't hang.
+		beast::error_code ec;
+		beast::get_lowest_layer(*_websocket).cancel(ec);
+	}
+
+	Disconnect(false);
+
+	_ioContext.stop();
+
+	if (_netThread && _netThread->joinable())
 		_netThread->join();
 }
 
@@ -169,6 +185,10 @@ void WebSocket::Disconnect(bool reconnect /*= false*/)
 	Logger::Get()->Log(samplog_LogLevel::DEBUG, "WebSocket::Disconnect");
 
 	_reconnect = reconnect;
+
+	// Ensure timers don't keep `io_context.run()` alive during shutdown/reconnect.
+	m_HeartbeatTimer.cancel();
+	_reconnectTimer.cancel();
 
 	if (_websocket)
 	{
